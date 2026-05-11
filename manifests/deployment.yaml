@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: roxstar-family-car-race
+  namespace: ${NAMESPACE}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: roxstar-family-car-race
+  template:
+    metadata:
+      labels:
+        app: roxstar-family-car-race
+    spec:
+      containers:
+        - name: roxstar-family-car-race
+          image: ${AZURE_CONTAINER_REGISTRY}.azurecr.io/roxstar-family-car-race:latest
+          ports:
+            - containerPort: 8081
+          env:
+            - name: NODE_OPTIONS
+              value: "--max-old-space-size=900"
+          envFrom:
+            - configMapRef:
+                name: app-config
+            - secretRef:
+                name: aws-test-secret
