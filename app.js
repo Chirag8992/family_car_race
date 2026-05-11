@@ -67,14 +67,17 @@ function createApp(redisClient) {
     });
   }
 
+  // ── Route prefix ──────────────────────────────────────────────────────
+  const PREFIX = '/v1/family-race/api';
+
   // ── Health check (unauthenticated) ────────────────────────────────────
-  app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+  app.get(`${PREFIX}/health`, (_req, res) => res.json({ status: 'ok' }));
 
   // ── Routes ────────────────────────────────────────────────────────────
-  app.use('/auth', authRoutes);
+  app.use(`${PREFIX}/auth`, authRoutes);
 
   // Public game page endpoints — NO auth required
-  app.use('/game', gameRoutes);
+  app.use(`${PREFIX}/game`, gameRoutes);
 
   // ── DEV/TEST: pit window opener (no auth) ─────────────────────────────
   // if (process.env.NODE_ENV !== 'production') {
@@ -124,13 +127,13 @@ function createApp(redisClient) {
   // }
 
   // All routes below require a valid JWT
-  app.use('/admin',       authenticate, admin, adminRoutes);
-  app.use('/race',        authenticate, participant(redisClient), raceRoutes);
-  app.use('/pit',         authenticate, participant(redisClient), pitRoutes);
-  app.use('/leaderboard', authenticate, leaderboardRoutes);
+  app.use(`${PREFIX}/admin`,       authenticate, admin, adminRoutes);
+  app.use(`${PREFIX}/race`,        authenticate, participant(redisClient), raceRoutes);
+  app.use(`${PREFIX}/pit`,         authenticate, participant(redisClient), pitRoutes);
+  app.use(`${PREFIX}/leaderboard`, authenticate, leaderboardRoutes);
 
   // ── GET /user/profile — returns current user's name, image, family info ──
-  app.get('/user/profile', authenticate, async (req, res) => {
+  app.get(`${PREFIX}/user/profile`, authenticate, async (req, res) => {
     try {
       const userId = req.user.memberId || req.user.userID;
       const rows = await db.query(
