@@ -17,7 +17,7 @@ const raceService = require('../services/race.service');
 const { redisClient } = require('../config/redis');
 const ioSingleton = require('../socket/io');
 
-const connection = { host: env.REDIS_HOST, port: env.REDIS_PORT };
+const connection = { host: env.REDIS_PARTYROOM_URL, port: env.REDIS_PORT };
 
 // Job names that this worker handles
 const OPEN_JOBS  = new Set([GAME.JOB_NAMES.FUEL_WINDOW_OPEN_1,  GAME.JOB_NAMES.FUEL_WINDOW_OPEN_2]);

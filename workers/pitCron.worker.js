@@ -18,7 +18,7 @@ const { redisClient } = require('../config/redis');
 const db          = require('../config/mysql');
 const ioSingleton = require('../socket/io');
 
-const connection = { host: env.REDIS_HOST, port: env.REDIS_PORT };
+const connection = { host: env.REDIS_PARTYROOM_URL, port: env.REDIS_PORT };
 
 /**
  * Returns the current hour in IST (UTC+05:30).

@@ -33,7 +33,7 @@ dotenv.config();
 
 // ─── Shared connection config ──────────────────────────────────────────────
 const redisConfig = {
-  host: process.env.REDIS_HOST || 'localhost',
+  host: process.env.REDIS_PARTYROOM_URL || 'localhost',
   port: parseInt(process.env.REDIS_PORT, 10) || 6379,
   maxRetriesPerRequest: 3,
   commandTimeout: 5000,

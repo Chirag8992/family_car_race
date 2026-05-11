@@ -19,10 +19,8 @@ const REQUIRED = [
   ['DB_PORT',       'MySQL port'],
   ['DB_USERNAME',   'MySQL user'],
   ['DB_DATABASE',   'MySQL database name'],
-  ['REDIS_HOST',    'Redis host'],
-  ['REDIS_PORT',    'Redis port'],
-  ['JWT_API_KEY',   'JWT signing secret'],
-  ['BULLMQ_PREFIX', 'BullMQ Redis key prefix'],
+  ['REDIS_PARTYROOM_URL',    'Redis host'],
+  ['REDIS_PORT',    'Redis port']
 ];
 
 function validate() {
@@ -54,11 +52,8 @@ function load() {
     DB_POOL_LIMIT: parseInt(process.env.DB_POOL_LIMIT || '80', 10),
 
     // Redis
-    REDIS_HOST:    process.env.REDIS_HOST,
+    REDIS_PARTYROOM_URL:    process.env.REDIS_PARTYROOM_URL,
     REDIS_PORT:    parseInt(process.env.REDIS_PORT, 10),
-
-    // Auth
-    JWT_API_KEY:   process.env.JWT_API_KEY,
 
     // Admin user IDs — comma-separated in env, stored as a Set for O(1) lookup.
     // Example: ADMIN_USER_IDS=1,42,100
@@ -68,9 +63,6 @@ function load() {
         .map(s => parseInt(s.trim(), 10))
         .filter(n => !isNaN(n))
     ),
-
-    // BullMQ
-    BULLMQ_PREFIX: process.env.BULLMQ_PREFIX,
 
     // Notifications
     NOTIFY_BASE_URL: process.env.NOTIFY_BASE_URL || '',

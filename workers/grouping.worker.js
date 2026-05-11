@@ -34,7 +34,7 @@ const gameService  = require('../services/game.service');
 const { redisClient } = require('../config/redis');
 const db           = require('../config/mysql');
 
-const connection = { host: env.REDIS_HOST, port: env.REDIS_PORT };
+const connection = { host: env.REDIS_PARTYROOM_URL, port: env.REDIS_PORT };
 
 /**
  * Day 2 manual grouping based on original Day 1 ranking positions.

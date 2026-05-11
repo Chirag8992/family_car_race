@@ -22,7 +22,7 @@ const GAME       = require('../constants/game');
 
 // BullMQ uses its own ioredis connection — separate from the app's redisClient.
 const connection = {
-  host: env.REDIS_HOST,
+  host: env.REDIS_PARTYROOM_URL,
   port: env.REDIS_PORT,
 };
 

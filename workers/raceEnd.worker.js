@@ -28,7 +28,7 @@ const { redisClient } = require('../config/redis');
 const db            = require('../config/mysql');
 const ioSingleton   = require('../socket/io');
 
-const connection = { host: env.REDIS_HOST, port: env.REDIS_PORT };
+const connection = { host: env.REDIS_PARTYROOM_URL, port: env.REDIS_PORT };
 
 const worker = new Worker(
   GAME.QUEUE_NAMES.RACE_END,

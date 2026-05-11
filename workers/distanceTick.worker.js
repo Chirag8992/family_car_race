@@ -14,7 +14,7 @@ const keys        = require('../utils/keys');
 const { redisClient } = require('../config/redis');
 const ioSingleton = require('../socket/io');
 
-const connection = { host: env.REDIS_HOST, port: env.REDIS_PORT };
+const connection = { host: env.REDIS_PARTYROOM_URL, port: env.REDIS_PORT };
 
 // Fix #18: round to 6 decimal places to eliminate IEEE 754 accumulation drift.
 function roundDistance(value) {
