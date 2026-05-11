@@ -38,6 +38,7 @@ function createApp(redisClient) {
 
   // ── Socket.IO setup ────────────────────────────────────────────────────
   const io = new Server(server, {
+    path      : '/v1/family-race/socket/',   
     cors      : { origin: '*' },   // tighten in production
     transports: ['websocket', 'polling'],
   });
