@@ -14,4 +14,4 @@ ENV NODE_ENV=production
 ENV PORT=8081
 
 
-CMD ["node", "app.js"]
+CMD ["node", "server.js"]
