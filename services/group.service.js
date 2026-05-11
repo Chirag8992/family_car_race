@@ -70,7 +70,7 @@ async function computeDay1Groups(raceId, raceWeekStart, groupingDate, db, redis)
 async function computeNextDayGroups(raceId, dayNumber, db) {
   const rows = await db.query(
     `SELECT family_id, rank_position, group_number
-       FROM race_results
+       FROM family_car_race_result
       WHERE race_id = ? AND day_number = ?
       ORDER BY group_number ASC, rank_position ASC`,
     [raceId, dayNumber]

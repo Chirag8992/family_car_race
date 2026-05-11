@@ -71,7 +71,7 @@ function currentWeekThursdayIST() {
 async function getActiveGame(db) {
   const rows = await db.query(
     `SELECT id, race_week_start, race_start_day, race_end_day, race_start_time, status
-       FROM game_schedule
+       FROM family_car_race_schedule
       WHERE status NOT IN ('completed')
       ORDER BY created_at DESC
       LIMIT 1`
@@ -142,7 +142,7 @@ async function resolveGameContext(memberId, db, redis) {
   if (!game) {
     // Try to get the latest game's date range for the leaderboard
     const [latestGame] = await db.query(
-      `SELECT race_week_start, race_start_day FROM game_schedule ORDER BY created_at DESC LIMIT 1`
+      `SELECT race_week_start, race_start_day FROM family_car_race_schedule ORDER BY created_at DESC LIMIT 1`
     );
     let weekStart, weekEnd;
     if (latestGame) {

@@ -6,7 +6,7 @@ const gameService = require('../services/game.service');
 const { redisClient } = require('../config/redis');
 const db = require('../config/mysql');
 
-const raceId = '673a6613-a52e-46f8-a240-0510e7a011cf';
+const raceId = '2';
 const raceWeekStart = '2020-05-01';
 const groupingDate = '2026-01-05';
 

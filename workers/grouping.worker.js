@@ -61,7 +61,7 @@ const worker = new Worker(
 
     // ── Scenario 1: Day 1 grouping (today = race_start_day, status = 'scheduled') ──
     const scheduledGames = await db.query(
-      `SELECT id, race_week_start, race_start_day FROM game_schedule WHERE status = 'scheduled'`
+      `SELECT id, race_week_start, race_start_day FROM family_car_race_schedule WHERE status = 'scheduled'`
     );
 
     for (const game of scheduledGames) {
@@ -100,7 +100,7 @@ const worker = new Worker(
 
     // ── Scenario 2: Day 3 grouping (today = race_start_day + 2, status = 'day2_done') ──
     const day2DoneGames = await db.query(
-      `SELECT id, race_start_day FROM game_schedule WHERE status = 'day2_done'`
+      `SELECT id, race_start_day FROM family_car_race_schedule WHERE status = 'day2_done'`
     );
 
     for (const game of day2DoneGames) {

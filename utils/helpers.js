@@ -143,7 +143,7 @@ function pitWindowKeyFromHour(hour) {
 }
 
 /**
- * Maps a dayNumber (1, 2, 3) to the next game_schedule status string.
+ * Maps a dayNumber (1, 2, 3) to the next family_car_race_schedule status string.
  * Called at race end to advance status.
  *
  * @param {number} dayNumber
@@ -220,7 +220,7 @@ module.exports = {
 /**
  * Returns today's date as a "YYYY-MM-DD" string in IST (UTC+05:30).
  * Fix #15: Used by pitCron.worker to compute today's race-day date consistently
- * with the IST-based race_start_day values stored in game_schedule.
+ * with the IST-based race_start_day values stored in family_car_race_schedule.
  * @returns {string}
  */
 function todayISTString() {

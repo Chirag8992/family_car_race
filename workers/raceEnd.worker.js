@@ -8,8 +8,8 @@
  * Responsibilities:
  *   1. Stop distance-tick repeating job
  *   2. Read final leaderboard and family states
- *   3. INSERT 3 rows into race_results MySQL
- *   4. Update game_schedule status
+ *   3. INSERT 3 rows into family_car_race_result MySQL
+ *   4. Update family_car_race_schedule status
  *   5. Compute Day N+1 groups (if not Day 3)
  *   6. Broadcast race_finished
  *   7. Cleanup all Redis keys for this group race
@@ -17,7 +17,6 @@
  */
 
 const { Worker } = require('bullmq');
-const { v4: uuid } = require('uuid');
 const env        = require('../config/env');
 const GAME       = require('../constants/game');
 const keys       = require('../utils/keys');
@@ -73,13 +72,12 @@ const worker = new Worker(
       stateMap[familyId] = state || {};
     }
 
-    // 4. Write race_results to MySQL
+    // 4. Write family_car_race_result to MySQL
     await removeTickJob(raceId, dayNumber, groupNumber);
     const insertValues = [];
     for (const entry of leaderboard) {
       const state = stateMap[entry.familyId] || {};
       insertValues.push([
-        uuid(),
         raceId,
         dayNumber,
         groupNumber,
@@ -94,8 +92,8 @@ const worker = new Worker(
     }
     if (insertValues.length) {
       await db.query(
-        `INSERT INTO race_results
-           (id, race_id, day_number, group_number, race_date, family_id,
+        `INSERT INTO family_car_race_result
+           (race_id, day_number, group_number, race_date, family_id,
             rank_position, distance_km, base_speed, final_speed, car_stopped, created_at)
          VALUES ?`,
         [insertValues.map(r => [...r, new Date()])]
@@ -121,7 +119,7 @@ const worker = new Worker(
     const remaining = await redis.scard(keys.activeDayGroups(raceId, dayNumber));
     if (remaining === 0) {
       if (dayNumber < 3) {
-        // All 3 groups' race_results are now in MySQL — mark day as done.
+        // All 3 groups' family_car_race_result are now in MySQL — mark day as done.
         // Next day's grouping is handled by the midnight cron (grouping.worker.js).
         await gameService.updateGameStatus(raceId, `day${dayNumber}_done`, db, redis);
         console.log(`[raceEnd] Day ${dayNumber} complete — waiting for midnight cron to set day${dayNumber + 1} groups`);

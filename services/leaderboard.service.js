@@ -36,7 +36,7 @@ async function getLiveLeaderboard(redis, raceId, dayNumber, groupNumber) {
 async function getHistoricalLeaderboard(db, raceId) {
   const rows = await db.query(
     `SELECT day_number, group_number, family_id, rank_position, distance_km, race_date
-       FROM race_results
+       FROM family_car_race_result
       WHERE race_id = ?
       ORDER BY day_number ASC, group_number ASC, rank_position ASC`,
     [raceId]
@@ -50,7 +50,7 @@ async function getHistoricalLeaderboard(db, raceId) {
 async function getHistoricalDay(db, raceId, dayNumber) {
   const rows = await db.query(
     `SELECT day_number, group_number, family_id, rank_position, distance_km, race_date
-       FROM race_results
+       FROM family_car_race_result
       WHERE race_id = ? AND day_number = ?
       ORDER BY group_number ASC, rank_position ASC`,
     [raceId, parseInt(dayNumber, 10)]

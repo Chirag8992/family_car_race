@@ -28,7 +28,7 @@ const keys = {
     `game:${raceId}:day:${dayNumber}:start_trigger`,
 
   /**
-   * Game configuration hash (mirrors game_schedule MySQL row).
+   * Game configuration hash (mirrors family_car_race_schedule MySQL row).
    * Written at game creation. Read by workers instead of MySQL.
    */
   gameMeta: (raceId) =>

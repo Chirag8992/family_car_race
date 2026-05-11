@@ -127,7 +127,7 @@ async function setupCronJobs() {
     GAME.JOB_NAMES.PIT_WINDOW_OPEN,
     {},
     {
-      repeat:       { pattern: '0 8,14,19 * * *', tz: 'Asia/Kolkata' },
+      repeat:       { pattern: '0 8,18,19 * * *', tz: 'Asia/Kolkata' },
       jobId:        'pit-window-cron',
       updateData:   true,
     }

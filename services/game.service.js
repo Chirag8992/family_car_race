@@ -4,10 +4,9 @@
  * services/game.service.js
  *
  * Game creation, retrieval, and status management.
- * Writes to both MySQL (game_schedule) and Redis (meta hash + TTL trigger keys).
+ * Writes to both MySQL (family_car_race_schedule) and Redis (meta hash + TTL trigger keys).
  */
 
-const { v4: uuid } = require('uuid');
 const keys          = require('../utils/keys');
 const helpers       = require('../utils/helpers');
 
@@ -38,7 +37,7 @@ function validateCreateInput({ race_week_start, race_start_day, race_end_day, ra
 
 /**
  * Creates a new game week.
- * Inserts into game_schedule, writes Redis meta hash, creates 3 TTL trigger keys.
+ * Inserts into family_car_race_schedule, writes Redis meta hash, creates 3 TTL trigger keys.
  *
  * @param {{ race_week_start, race_start_day, race_end_day, race_start_time }} body
  * @param {object}               db    - config/mysql module
@@ -49,21 +48,20 @@ async function createGame(body, db, redis) {
   validateCreateInput(body);
 
   const { race_week_start, race_start_day, race_end_day, race_start_time } = body;
-  const raceId = uuid();
-
   // grouping_date = one day before race start (no longer fixed to Thursday)
   const grouping_date = helpers.addDays(race_start_day, -1);
   const day1_date     = race_start_day;
   const day2_date     = helpers.addDays(race_start_day, 1);
   const day3_date     = helpers.addDays(race_start_day, 2);
 
-  // MySQL
-  await db.query(
-    `INSERT INTO game_schedule
-       (id, race_week_start, race_start_day, race_end_day, race_start_time, status, created_at)
-     VALUES (?, ?, ?, ?, ?, 'scheduled', NOW())`,
-    [raceId, race_week_start, race_start_day, race_end_day, race_start_time]
+  // MySQL — id is AUTO_INCREMENT, get insertId
+  const result = await db.query(
+    `INSERT INTO family_car_race_schedule
+       (race_week_start, race_start_day, race_end_day, race_start_time, status, created_at)
+     VALUES (?, ?, ?, ?, 'scheduled', NOW())`,
+    [race_week_start, race_start_day, race_end_day, race_start_time]
   );
+  const raceId = result.insertId;
 
   // Redis meta hash
   await redis.hset(keys.gameMeta(raceId), {
@@ -97,10 +95,10 @@ async function createGame(body, db, redis) {
 }
 
 /**
- * Returns a game_schedule row from MySQL, or null if not found.
+ * Returns a family_car_race_schedule row from MySQL, or null if not found.
  */
 async function getGame(raceId, db) {
-  const rows = await db.query('SELECT * FROM game_schedule WHERE id = ?', [raceId]);
+  const rows = await db.query('SELECT * FROM family_car_race_schedule WHERE id = ?', [raceId]);
   return rows[0] || null;
 }
 
@@ -108,7 +106,7 @@ async function getGame(raceId, db) {
  * Updates game status in both MySQL and the Redis meta hash.
  */
 async function updateGameStatus(raceId, status, db, redis) {
-  await db.query('UPDATE game_schedule SET status = ? WHERE id = ?', [status, raceId]);
+  await db.query('UPDATE family_car_race_schedule SET status = ? WHERE id = ?', [status, raceId]);
   await redis.hset(keys.gameMeta(raceId), 'status', status);
 }
 

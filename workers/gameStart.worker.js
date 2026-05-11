@@ -18,7 +18,7 @@
  *      - init member inventories
  *      - SADD to active_groups
  *   3. Enqueue BullMQ race jobs for each group
- *   4. Update game_schedule status in MySQL and Redis meta
+ *   4. Update family_car_race_schedule status in MySQL and Redis meta
  *   5. Broadcast race_started to all connected Socket.IO clients
  */
 

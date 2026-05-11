@@ -34,7 +34,7 @@ function currentISTHour() {
  * Cron fires at 8:00, 14:00, 19:00 IST.
  */
 function pitWindowKeyFromISTHour(istHour) {
-  const map = { 8: 'morning', 14: 'afternoon', 19: 'evening' };
+  const map = { 8: 'morning', 18: 'afternoon', 19: 'evening' };
   return map[istHour] ?? null;
 }
 
@@ -72,7 +72,7 @@ const worker = new Worker(
     const todayIST = new Date(Date.now() + IST_OFFSET_MS).toISOString().slice(0, 10);
 
     const games = await db.query(
-      `SELECT id, race_start_day FROM game_schedule
+      `SELECT id, race_start_day FROM family_car_race_schedule
         WHERE status IN ('day1_pending','day2_pending','day3_pending')`
     );
 

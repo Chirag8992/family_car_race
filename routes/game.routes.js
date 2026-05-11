@@ -268,7 +268,7 @@ router.get('/spectate', async (req, res) => {
 // ─── GET /game/week-leaderboard ───────────────────────────────────────────
 //
 // Returns top 20 families by silver coins for the current race's collection period.
-// Uses race_week_start → (race_start_day - 1) from the latest game_schedule.
+// Uses race_week_start → (race_start_day - 1) from the latest family_car_race_schedule.
 // Falls back to current week Monday–Thursday if no game exists.
 //
 // No params required — resolves dates from the latest game automatically.
@@ -280,7 +280,7 @@ router.get('/week-leaderboard', async (req, res) => {
   try {
     // Find the latest game to get its date range and status
     const [game] = await db.query(
-      `SELECT race_week_start, race_start_day, status FROM game_schedule
+      `SELECT race_week_start, race_start_day, status FROM family_car_race_schedule
        ORDER BY created_at DESC LIMIT 1`
     );
 
