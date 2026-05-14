@@ -62,14 +62,17 @@ const SCRIPTS = {
 
   /**
    * throwEgg
-   * Atomically throws 1 egg at a target family.
-   * Directly deducts 1 crystal from the thrower — no separate conversion step.
+   * Atomically throws N eggs at a target family.
+   * Directly deducts N crystals from the thrower — no separate conversion step.
    * KEYS[1] = target family state hash, KEYS[2] = thrower inventory hash
+   * ARGV[1] = amount (number of eggs/crystals to use, default 1)
    * Returns: 0 = hit reduced speed, 1 = wasted (target already at 0)
    */
   throwEgg: `
+    local amount = tonumber(ARGV[1]) or 1
+    if amount < 1 then amount = 1 end
     local crystals = tonumber(redis.call('HGET', KEYS[2], 'crystals'))
-    if crystals == nil or crystals < 1 then
+    if crystals == nil or crystals < amount then
       return redis.error_reply('no_crystals')
     end
     local speed = tonumber(redis.call('HGET', KEYS[1], 'current_speed'))
@@ -77,31 +80,36 @@ const SCRIPTS = {
     if speed <= 0 then
       wasted = 1
     else
-      local new_speed = math.max(0, speed - 5)
+      local penalty = amount * 5
+      local new_speed = math.max(0, speed - penalty)
       redis.call('HSET', KEYS[1], 'current_speed', tostring(new_speed))
-      redis.call('HINCRBY', KEYS[1], 'egg_penalty', 1)
+      redis.call('HINCRBY', KEYS[1], 'egg_penalty', amount)
     end
-    redis.call('HINCRBY', KEYS[2], 'crystals', -1)
+    redis.call('HINCRBY', KEYS[2], 'crystals', -amount)
     return wasted
   `,
 
   /**
    * useWiper
-   * Atomically uses 1 wiper to recover own family speed (+5, capped at max_speed).
-   * Directly deducts 1 crystal from the member — no separate conversion step.
+   * Atomically uses N wipers to recover own family speed (+5*N, capped at max_speed).
+   * Directly deducts N crystals from the member — no separate conversion step.
    * KEYS[1] = family state hash, KEYS[2] = member inventory hash
+   * ARGV[1] = amount (number of wipers/crystals to use, default 1)
    * Returns: new current_speed integer
    */
   useWiper: `
+    local amount = tonumber(ARGV[1]) or 1
+    if amount < 1 then amount = 1 end
     local crystals = tonumber(redis.call('HGET', KEYS[2], 'crystals'))
-    if crystals == nil or crystals < 1 then
+    if crystals == nil or crystals < amount then
       return redis.error_reply('no_crystals')
     end
     local speed     = tonumber(redis.call('HGET', KEYS[1], 'current_speed'))
     local max_speed = tonumber(redis.call('HGET', KEYS[1], 'max_speed'))
-    local new_speed = math.min(max_speed, speed + 5)
+    local boost = amount * 5
+    local new_speed = math.min(max_speed, speed + boost)
     redis.call('HSET', KEYS[1], 'current_speed', tostring(new_speed))
-    redis.call('HINCRBY', KEYS[2], 'crystals', -1)
+    redis.call('HINCRBY', KEYS[2], 'crystals', -amount)
     return new_speed
   `,
 
@@ -122,13 +130,10 @@ const SCRIPTS = {
     end
     local current_speed = tonumber(redis.call('HGET', KEYS[1], 'current_speed'))
     local max_speed     = tonumber(redis.call('HGET', KEYS[1], 'max_speed'))
-    local new_speed     = current_speed + 5
-    local new_max_speed = max_speed
-    if new_speed > max_speed then
-      new_max_speed = new_speed
-      redis.call('HSET', KEYS[1], 'max_speed', tostring(new_max_speed))
-    end
+    local new_speed     = current_speed + 15
+    local new_max_speed = max_speed + 15
     redis.call('HSET', KEYS[1], 'current_speed', tostring(new_speed))
+    redis.call('HSET', KEYS[1], 'max_speed', tostring(new_max_speed))
     redis.call('HSET', KEYS[1], 'is_running', '1')
     redis.call('HSET', KEYS[1], 'fuel_status', 'ok')
     redis.call('SET', KEYS[3], '1')

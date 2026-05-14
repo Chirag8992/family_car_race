@@ -21,6 +21,9 @@ const reportService = require('../services/report.service');
 const helpers       = require('../utils/helpers');
 const { redisClient } = require('../config/redis');
 const db              = require('../config/mysql');
+const ioSingleton     = require('../socket/io');
+const keys            = require('../utils/keys');
+const GAME            = require('../constants/game');
 
 const router = Router();
 
@@ -72,6 +75,18 @@ router.post('/claim', async (req, res) => {
       redisClient, raceId, parseInt(dayNumber, 10), today,
       memberId, familyId, windowKey, groupNumber ? parseInt(groupNumber, 10) : null
     );
+
+    // Broadcast updated family boost to all users in the group room (realtime)
+    const io = ioSingleton.get();
+    if (io && groupNumber) {
+      const room = `${raceId}:d${dayNumber}:g${groupNumber}`;
+      io.to(room).emit('pit_boost_updated', {
+        familyId,
+        familyTotalBoost: result.familyTotalBoost,
+        projectedBaseSpeed: 100 + result.familyTotalBoost,
+      });
+    }
+
     return res.json(result);
   } catch (err) {
     if (err.code === 'window_closed')  return res.status(400).json({ error: 'window_closed' });

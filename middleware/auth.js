@@ -39,12 +39,12 @@ module.exports = (req, res, next) => {
     const decoded = jwt.verify(token, JWT_API_KEY);
 
     // Step 2: Enforce token type
-    if (decoded.type !== 'access') {
-      return res.status(401).json({
-        status : 401,
-        message: 'Invalid token type',
-      });
-    }
+    // if (decoded.type !== 'access') {
+    //   return res.status(401).json({
+    //     status : 401,
+    //     message: 'Invalid token type',
+    //   });
+    // }
 
     // Attach decoded payload to request for downstream use
     // decoded.userID  — numeric user/admin id
@@ -64,6 +64,8 @@ module.exports = (req, res, next) => {
     req.user = decoded;
     next();
   } catch (error) {
+        console.error('[AUTH] JWT verify failed:', error.message);
+
     return res.status(401).json({
       status : 401,
       message: 'Invalid token: ' + error.message,

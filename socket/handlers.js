@@ -51,7 +51,7 @@ function attach(io) {
         // ── 1. Verify JWT ──────────────────────────────────────────────
         let decoded;
         try {
-          decoded = jwt.verify(token, env.JWT_API_KEY);
+          decoded = jwt.verify(token, process.env.JWT_API_KEY);
         } catch {
           socket.emit('error', { message: 'Invalid token' });
           return;
@@ -177,15 +177,24 @@ function attach(io) {
     // ─── spectate_room ────────────────────────────────────────────────────
     // Non-participants (spectators) join a race room in read-only mode.
     // They receive all race:state_update broadcasts but cannot emit actions.
-    // No memberId required — completely open.
+    // Participants are NOT allowed to spectate — they must play their own race.
     //
-    // Payload: { raceId, dayNumber, groupNumber }
+    // Payload: { raceId, dayNumber, groupNumber, memberId? }
     socket.on('spectate_room', async (data) => {
       try {
-        const { raceId, dayNumber, groupNumber } = data || {};
+        const { raceId, dayNumber, groupNumber, memberId } = data || {};
         if (!raceId || !dayNumber || !groupNumber) {
           socket.emit('error', { message: 'raceId, dayNumber, groupNumber required' });
           return;
+        }
+
+        // Block participants from spectating other groups
+        if (memberId) {
+          const isParticipant = await redisClient.sismember(keys.participants(raceId), String(memberId));
+          if (isParticipant) {
+            socket.emit('spectate_error', { reason: 'participant_cannot_spectate' });
+            return;
+          }
         }
 
         // Validate the race exists and is running
@@ -229,12 +238,37 @@ function attach(io) {
 
         const startedAt = raceMeta.started_at ? parseInt(raceMeta.started_at, 10) : null;
 
+        // Fetch family names for spectator display
+        let spectatorFamilyInfo = {};
+        if (familiesRaw.length > 0) {
+          try {
+            const placeholders = familiesRaw.map(() => '?').join(',');
+            const rows = await db.query(
+              `SELECT g.id AS familyId, g.familyname AS familyName, g.image AS familyImage,
+                      (SELECT COUNT(*) FROM groupsmembers gm WHERE gm.familyId = g.id AND gm.memberStatus = '1') AS memberCount
+                 FROM \`groups\` g
+                WHERE g.id IN (${placeholders})`,
+              familiesRaw
+            );
+            for (const row of rows) {
+              spectatorFamilyInfo[String(row.familyId)] = {
+                familyName:  row.familyName || '',
+                familyImage: row.familyImage || '',
+                memberCount: parseInt(row.memberCount, 10) || 0,
+              };
+            }
+          } catch (err) {
+            console.warn('[socket] spectator family info lookup failed:', err.message);
+          }
+        }
+
         socket.emit('spectating', {
           raceId,
           dayNumber:   parseInt(dayNumber, 10),
           groupNumber: parseInt(groupNumber, 10),
           families:    familiesRaw,
           family_states: familyStates,
+          family_info: spectatorFamilyInfo,
           leaderboard,
           race_elapsed_ms: startedAt ? Math.max(0, Date.now() - startedAt) : 0,
           race_duration_ms: GAME.RACE_DURATION_MS,
@@ -349,6 +383,9 @@ async function buildJoinSnapshot(redis, raceId, dayNumber, groupNumber, memberId
   snapshot.family_info = familyInfoMap;
 
   if (raceStatus === 'not_started') {
+    // Read authoritative countdown from Redis start_trigger TTL
+    const ttl = await redis.ttl(keys.gameStartTrigger(raceId, dayNumber));
+    snapshot.seconds_until_start = ttl > 0 ? ttl : 0;
     return snapshot;
   }
 

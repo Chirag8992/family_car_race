@@ -34,7 +34,7 @@ function currentISTHour() {
  * Cron fires at 8:00, 14:00, 19:00 IST.
  */
 function pitWindowKeyFromISTHour(istHour) {
-  const map = { 8: 'morning', 18: 'afternoon', 19: 'evening' };
+  const map = { 8: 'morning', 14: 'afternoon', 20: 'evening' };
   return map[istHour] ?? null;
 }
 

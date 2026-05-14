@@ -49,7 +49,7 @@ router.post('/login', async (req, res) => {
         type:     'access',
       };
 
-      const token = jwt.sign(payload, env.JWT_API_KEY, { expiresIn: '24h' });
+      const token = jwt.sign(payload, process.env.JWT_API_KEY, { expiresIn: '24h' });
       // await db.query('UPDATE admin SET api_access_token = ? WHERE id = ?', [token, admin.id]);
 
       return res.json({ token });
@@ -83,7 +83,7 @@ router.post('/login', async (req, res) => {
       type:     'access',
     };
 
-    const token = jwt.sign(payload, env.JWT_API_KEY, { expiresIn: '24h' });
+    const token = jwt.sign(payload, process.env.JWT_API_KEY, { expiresIn: '24h' });
 
     return res.json({ token });
 

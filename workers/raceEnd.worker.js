@@ -52,8 +52,9 @@ const worker = new Worker(
       console.error(`[raceEnd] gameMeta missing race date for ${raceId} day${dayNumber} — falling back to UTC date`);
     }
     const raceDate = today || helpers.todayUTCString();
-
+    
     // 1. Stop distance-tick
+    await removeTickJob(raceId, dayNumber, groupNumber);
 
     // 2. Get final standings
     const lbRaw = await redis.zrevrange(
@@ -73,7 +74,6 @@ const worker = new Worker(
     }
 
     // 4. Write family_car_race_result to MySQL
-    await removeTickJob(raceId, dayNumber, groupNumber);
     const insertValues = [];
     for (const entry of leaderboard) {
       const state = stateMap[entry.familyId] || {};
@@ -161,18 +161,29 @@ async function cleanupGroupRaceKeys(redis, raceId, dayNumber, groupNumber, famil
   const connectedNow = await redis.smembers(keys.connectedMembers(raceId, dayNumber, groupNumber));
   for (const m of connectedNow) allMemberIds.add(m);
 
+  // Compute seconds until midnight IST so race data stays visible until then
+  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+  const nowIST = new Date(Date.now() + IST_OFFSET_MS);
+  const midnightIST = new Date(nowIST);
+  midnightIST.setUTCHours(24, 0, 0, 0); // next midnight in IST-as-UTC
+  const ttlUntilMidnight = Math.max(
+    300, // minimum 5 min to avoid instant deletion
+    Math.floor((midnightIST.getTime() - nowIST.getTime()) / 1000)
+  );
+
   const pipeline = redis.pipeline();
 
-  // Group / race-level keys
-  pipeline.del(keys.raceMeta(raceId, dayNumber, groupNumber));
-  pipeline.del(keys.leaderboard(raceId, dayNumber, groupNumber));
+  // Group / race-level keys — keep raceMeta with status=finished (cleaned on Day 3)
+  pipeline.hset(keys.raceMeta(raceId, dayNumber, groupNumber), 'status', 'finished');
+  // Keep leaderboard until midnight so participants can see final standings
+  pipeline.expire(keys.leaderboard(raceId, dayNumber, groupNumber), ttlUntilMidnight);
   pipeline.del(keys.connectedMembers(raceId, dayNumber, groupNumber));
   pipeline.del(keys.fuelWindowOpen(raceId, dayNumber, groupNumber, 1));
   pipeline.del(keys.fuelWindowOpen(raceId, dayNumber, groupNumber, 2));
 
-  // Family-level keys
+  // Family-level keys — keep familyState until midnight, delete the rest
   for (const familyId of families) {
-    pipeline.del(keys.familyState(raceId, dayNumber, groupNumber, familyId));
+    pipeline.expire(keys.familyState(raceId, dayNumber, groupNumber, familyId), ttlUntilMidnight);
     pipeline.del(keys.familyFueled(raceId, dayNumber, groupNumber, familyId, 1));
     pipeline.del(keys.familyFueled(raceId, dayNumber, groupNumber, familyId, 2));
     pipeline.del(keys.familyRestartFueled(raceId, dayNumber, groupNumber, familyId));
@@ -189,7 +200,7 @@ async function cleanupGroupRaceKeys(redis, raceId, dayNumber, groupNumber, famil
   }
 
   await pipeline.exec();
-  console.log(`[raceEnd] Redis cleanup done: day${dayNumber} group${groupNumber} (${allMemberIds.size} members cleaned)`);
+  console.log(`[raceEnd] Redis cleanup done: day${dayNumber} group${groupNumber} (${allMemberIds.size} members cleaned, state TTL=${ttlUntilMidnight}s)`);
 }
 
 async function cleanupGameKeys(redis, raceId) {
@@ -200,6 +211,12 @@ async function cleanupGameKeys(redis, raceId) {
   pipeline.del(keys.dayGroups(raceId, 1));
   pipeline.del(keys.dayGroups(raceId, 2));
   pipeline.del(keys.dayGroups(raceId, 3));
+  // Delete raceMeta for all day/group combos (kept until now for status lookups)
+  for (let d = 1; d <= 3; d++) {
+    for (let g = 1; g <= 3; g++) {
+      pipeline.del(keys.raceMeta(raceId, d, g));
+    }
+  }
   await pipeline.exec();
   console.log(`[raceEnd] Game-level Redis cleanup done: ${raceId}`);
 }

@@ -133,14 +133,23 @@ async function getPitMemberList(redis, db, raceId, dayNumber, groupNumber, famil
  * @returns {Promise<Array>}
  */
 async function getFamilyInventory(redis, db, raceId, dayNumber, groupNumber, familyId) {
-  // 1. All members of this family
+  // 1. All members of this family — include name + image via JOIN
   const members = await db.query(
-    `SELECT userId, memberStatus FROM groupsmembers WHERE familyId = ?`,
+    `SELECT gm.userId, gm.memberStatus, u.name, u.image
+       FROM groupsmembers gm
+       LEFT JOIN users u ON u.id = gm.userId
+      WHERE gm.familyId = ?`,
     [familyId]
   );
   if (!members.length) return [];
 
   const memberIds = members.map(m => String(m.userId));
+
+  // Build name/image lookup
+  const memberInfoMap = {};
+  members.forEach(m => {
+    memberInfoMap[String(m.userId)] = { name: m.name || '', image: m.image || '' };
+  });
 
   // 2. Who is active in this race (did any action: crystal, egg, wiper, fuel, socket join)
   const activeMembersKey = keys.activeMembers(raceId, dayNumber, groupNumber, familyId);
@@ -157,9 +166,6 @@ async function getFamilyInventory(redis, db, raceId, dayNumber, groupNumber, fam
   const invResults = await pipeline.exec();
 
   // 4. Build entries
-  const memberStatusMap = {};
-  members.forEach(m => { memberStatusMap[String(m.userId)] = m.memberStatus; });
-
   const active   = [];
   const inactive = [];
 
@@ -169,9 +175,12 @@ async function getFamilyInventory(redis, db, raceId, dayNumber, groupNumber, fam
     const wipers_used = err ? 0 : parseInt(fields[1] || '0', 10);
     const total_actions = eggs_used + wipers_used;
     const is_active   = activeSet.has(memberId);
+    const info = memberInfoMap[memberId] || {};
 
     const entry = {
       member_id:    memberId,
+      name:         info.name,
+      image:        info.image,
       eggs_used,
       wipers_used,
       total_actions,

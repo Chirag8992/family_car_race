@@ -110,11 +110,36 @@ router.get('/record-overview', async (req, res) => {
         continue;
       }
 
+       // Pre-fetch MySQL results for this day (fallback when Redis keys are cleaned up after race ends)
+      const mysqlResults = await db.query(
+        `SELECT group_number, family_id, rank_position, distance_km
+           FROM family_car_race_result
+          WHERE race_id = ? AND day_number = ?
+          ORDER BY group_number ASC, rank_position ASC`,
+        [raceId, dayNumber]
+      );
+      const mysqlResultsByGroup = {};
+      for (const row of mysqlResults) {
+        const gn = row.group_number;
+        if (!mysqlResultsByGroup[gn]) mysqlResultsByGroup[gn] = [];
+        mysqlResultsByGroup[gn].push({
+          familyId: String(row.family_id),
+          rank: row.rank_position,
+          distance: row.distance_km,
+        });
+      }
+
       const groups = [];
       for (let g = 1; g <= 3; g++) {
         const familyIds = JSON.parse(dayGroupsRaw[`group_${g}`] || '[]').map(String);
         const raceMeta = await redis.hgetall(keysUtil.raceMeta(raceId, dayNumber, g));
-        const groupStatus = raceMeta?.status || 'not_started';
+        let groupStatus = raceMeta?.status || 'not_started';
+
+        // Fallback: if Redis raceMeta was cleaned up but MySQL has results, mark as finished
+        const mysqlGroupResults = mysqlResultsByGroup[g] || [];
+        if (groupStatus === 'not_started' && mysqlGroupResults.length > 0) {
+          groupStatus = 'finished';
+        }
 
         // Get family info from MySQL
         let familyInfoMap = {};
@@ -146,6 +171,9 @@ router.get('/record-overview', async (req, res) => {
           const state = await redis.hgetall(keysUtil.familyState(raceId, dayNumber, g, fid));
           const lbEntry = leaderboard.find(e => String(e.familyId) === fid);
 
+            // Fallback to MySQL results when Redis data is cleaned up
+          const mysqlEntry = mysqlGroupResults.find(r => r.familyId === fid);
+
           return {
             familyId: fid,
             familyName: info.familyName || `Family ${fid}`,
@@ -154,9 +182,9 @@ router.get('/record-overview', async (req, res) => {
             ownerImage: info.ownerImage || '',
             memberCount: info.memberCount || 0,
             car: carColors[idx] || 'blue',
-            distance: lbEntry?.distanceKm ?? parseFloat(state?.distance_traveled || '0'),
+            distance: Number(lbEntry?.distanceKm ?? state?.distance_traveled ??mysqlEntry?.distance ?? 0 ),
             speed: parseInt(state?.current_speed || '0', 10),
-            rank: lbEntry?.rank ?? null,
+            rank: lbEntry ? lbEntry.rank : (mysqlEntry?.rank ?? null),
             isRunning: state?.is_running === '1',
           };
         }));
@@ -166,8 +194,8 @@ router.get('/record-overview', async (req, res) => {
 
       // Determine day status
       const anyRunning = groups.some(g => g.status === 'running');
-      const allFinished = groups.every(g => g.status === 'finished');
-      const dayStatus = anyRunning ? 'running' : allFinished ? 'finished' : 'pending';
+      const anyFinished = groups.some(g => g.status === 'finished');
+      const dayStatus = anyRunning ? 'running' : anyFinished ? 'finished' : 'pending';
 
       days.push({ dayNumber, status: dayStatus, groups });
     }
@@ -445,7 +473,7 @@ router.get('/pre-race-lobby', async (req, res) => {
       return {
         familyId:            fid,
         pitBoostClaims,
-        projectedBaseSpeed:  100 + (pitBoostClaims * 10),
+        projectedBaseSpeed:  100 + (pitBoostClaims * GAME.PIT_BOOST_PER_UNIT),
       };
     });
 

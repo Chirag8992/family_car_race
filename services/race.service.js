@@ -11,6 +11,7 @@
  */
 
 const keys = require('../utils/keys');
+const GAME = require('../constants/game');
 
 /**
  * Writes the initial state hash for one family at race start.
@@ -43,12 +44,12 @@ async function getFamilyState(redis, raceId, dayNumber, groupNumber, familyId) {
 
 /**
  * Reads total pit boost units for a family on a race day and returns base_speed.
- * base_speed = 100 + (total_boost_units * 10)
+ * base_speed = 100 + (total_boost_units * PIT_BOOST_PER_UNIT)
  */
 async function computeBaseSpeed(redis, raceId, dayNumber, date, familyId) {
   const val = await redis.get(keys.familyBoost(raceId, dayNumber, date, familyId));
   const totalBoost = parseInt(val || '0', 10);
-  return 100 + (totalBoost * 10);
+  return 100 + (totalBoost * GAME.PIT_BOOST_PER_UNIT);
 }
 
 /**

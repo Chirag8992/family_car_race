@@ -28,12 +28,12 @@ function validate() {
   for (const [key] of REQUIRED) {
     if (!process.env[key]) missing.push(key);
   }
-  if (missing.length > 0) {
-    throw new Error(
-      `[env] Missing required environment variables:\n  ${missing.join('\n  ')}\n` +
-      `Copy .env.example to .env and fill in all values.`
-    );
-  }
+  // if (missing.length > 0) {
+  //   throw new Error(
+  //     `[env] Missing required environment variables:\n  ${missing.join('\n  ')}\n` +
+  //     `Copy .env.example to .env and fill in all values.`
+  //   );
+  // }
 }
 
 function load() {

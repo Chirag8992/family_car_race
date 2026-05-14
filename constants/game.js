@@ -14,8 +14,8 @@ module.exports = Object.freeze({
 
   // ─── Race Timing ─────────────────────────────────────────────────────────
 
-  /** Total race duration in milliseconds (60 minutes). */
-  RACE_DURATION_MS: 60 * 60 * 1000,
+  /** Total race duration in milliseconds (20 minutes). */
+  RACE_DURATION_MS: 20 * 60 * 1000,
 
   /** Distance-tick interval: how often car positions are updated. */
   TICK_INTERVAL_MS: 1000,
@@ -35,7 +35,7 @@ module.exports = Object.freeze({
   BASE_SPEED_DEFAULT: 100,
 
   /** Speed bonus per pit stop claim unit (km/hr). */
-  PIT_BOOST_PER_UNIT: 10,
+  PIT_BOOST_PER_UNIT: 5,
 
   /** Speed reduction per egg hit (km/hr). */
   EGG_SPEED_PENALTY: 5,
@@ -44,7 +44,7 @@ module.exports = Object.freeze({
   WIPER_SPEED_RECOVERY: 5,
 
   /** Speed bonus per fuel submission during an open window (km/hr). */
-  FUEL_SPEED_BONUS: 5,
+  FUEL_SPEED_BONUS: 15,
 
   /** Minimum possible speed — car can't go negative. */
   SPEED_MIN: 0,
@@ -208,10 +208,10 @@ module.exports = Object.freeze({
 
   SPEED: Object.freeze({
     BASE_SPEED_DEFAULT:    100,
-    PIT_BOOST_PER_UNIT:    10,
+    PIT_BOOST_PER_UNIT:    5,
     EGG_SPEED_PENALTY:     5,
     WIPER_SPEED_RECOVERY:  5,
-    FUEL_SPEED_BONUS:      5,
+    FUEL_SPEED_BONUS:      15,
     SPEED_MIN:             0,
   }),
 

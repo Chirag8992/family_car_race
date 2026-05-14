@@ -136,9 +136,10 @@ router.post('/crystal/collect', async (req, res) => {
 // ─── Egg throw ─────────────────────────────────────────────────────────────────
 
 router.post('/egg/throw', async (req, res) => {
-  const { raceId, dayNumber, groupNumber, targetFamilyId } = req.body || {};
+  const { raceId, dayNumber, groupNumber, targetFamilyId, amount: rawAmount } = req.body || {};
   if (!validateRaceParams(res, raceId, dayNumber, groupNumber)) return;
 
+  const amount = Math.max(1, Math.min(10, parseInt(rawAmount, 10) || 1));
   const { memberId } = req.user;
   const familyId = await resolveFamily(raceId, memberId, req.user.familyId);
   if (!await verifyMemberGroup(res, raceId, dayNumber, groupNumber, familyId)) return;
@@ -160,7 +161,7 @@ router.post('/egg/throw', async (req, res) => {
 
   try {
     const { wasted, newSpeed } = await combatService.throwEgg(
-      redisClient, luaSHA, raceId, dayNumber, groupNumber, memberId, familyId, targetFamilyId
+      redisClient, luaSHA, raceId, dayNumber, groupNumber, memberId, familyId, targetFamilyId, amount
     );
 
     const remainingCrystals = parseInt(
@@ -186,16 +187,17 @@ router.post('/egg/throw', async (req, res) => {
 // ─── Wiper use ─────────────────────────────────────────────────────────────────
 
 router.post('/wiper/use', async (req, res) => {
-  const { raceId, dayNumber, groupNumber } = req.body || {};
+  const { raceId, dayNumber, groupNumber, amount: rawAmount } = req.body || {};
   if (!validateRaceParams(res, raceId, dayNumber, groupNumber)) return;
 
+  const amount = Math.max(1, Math.min(10, parseInt(rawAmount, 10) || 1));
   const { memberId } = req.user;
   const familyId = await resolveFamily(raceId, memberId, req.user.familyId);
   if (!await verifyMemberGroup(res, raceId, dayNumber, groupNumber, familyId)) return;
 
   try {
     const { newSpeed } = await combatService.useWiper(
-      redisClient, luaSHA, raceId, dayNumber, groupNumber, memberId, familyId
+      redisClient, luaSHA, raceId, dayNumber, groupNumber, memberId, familyId, amount
     );
 
     const remainingCrystals = parseInt(
