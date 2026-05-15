@@ -110,6 +110,25 @@ router.get('/record-overview', async (req, res) => {
         continue;
       }
 
+      // Hide groups for future days — Day 2 groups should only be visible on Day 2+
+      // (currentDay is null before race starts, so also hide in that case)
+      if (currentDay && dayNumber > currentDay) {
+        days.push({ dayNumber, status: 'upcoming', groups: [] });
+        continue;
+      }
+      // If race hasn't started yet (currentDay is null), only show Day 1 groups
+      if (!currentDay && dayNumber > 1) {
+        // Check if this day has MySQL results (race already happened but Redis cleared)
+        const hasResults = await db.query(
+          `SELECT 1 FROM family_car_race_result WHERE race_id = ? AND day_number = ? LIMIT 1`,
+          [raceId, dayNumber]
+        );
+        if (!hasResults.length) {
+          days.push({ dayNumber, status: 'upcoming', groups: [] });
+          continue;
+        }
+      }
+
        // Pre-fetch MySQL results for this day (fallback when Redis keys are cleaned up after race ends)
       const mysqlResults = await db.query(
         `SELECT group_number, family_id, rank_position, distance_km
@@ -147,7 +166,7 @@ router.get('/record-overview', async (req, res) => {
           const placeholders = familyIds.map(() => '?').join(',');
           const infoRows = await db.query(
             `SELECT g.id AS familyId, g.familyname AS familyName, g.image AS familyImage,
-                    u.name AS ownerName, u.image AS ownerImage,
+                    COALESCE(u.username, u.name) AS ownerName, u.image AS ownerImage,
                     (SELECT COUNT(*) FROM users WHERE familyId = g.id) AS memberCount
                FROM \`groups\` g
                LEFT JOIN users u ON u.id = g.userId
@@ -212,86 +231,6 @@ router.get('/record-overview', async (req, res) => {
   }
 });
 
-// ─── GET /game/leaderboard/history ───────────────────────────────────────
-//
-// Returns all completed race days for the Record (leaderboard) modal.
-// Available to EVERYONE — participants and spectators.
-//
-// Query params:
-//   raceId  (required)
-//
-// Response:
-//   { raceId, days: [ { dayNumber, race_date, groups: [ { groupNumber, results: [...] } ] } ] }
-
-router.get('/leaderboard/history', async (req, res) => {
-  try {
-    const { raceId } = req.query;
-    if (!raceId) {
-      return res.status(400).json({ error: 'raceId_required' });
-    }
-    const result = await lbService.getHistoricalLeaderboard(db, raceId);
-    return res.json(result);
-  } catch (err) {
-    console.error('[GET /game/leaderboard/history]', err.message);
-    return res.status(500).json({ error: 'internal_error', message: err.message });
-  }
-});
-
-// ─── GET /game/leaderboard/history/day ───────────────────────────────────
-//
-// Same as above but filtered to a single day. Convenience endpoint.
-//
-// Query params:
-//   raceId     (required)
-//   dayNumber  (required, 1 | 2 | 3)
-
-router.get('/leaderboard/history/day', async (req, res) => {
-  try {
-    const { raceId, dayNumber } = req.query;
-    if (!raceId || !dayNumber) {
-      return res.status(400).json({ error: 'raceId_and_dayNumber_required' });
-    }
-    const result = await lbService.getHistoricalDay(db, raceId, dayNumber);
-    return res.json(result);
-  } catch (err) {
-    console.error('[GET /game/leaderboard/history/day]', err.message);
-    return res.status(500).json({ error: 'internal_error', message: err.message });
-  }
-});
-
-// ─── GET /game/spectate ───────────────────────────────────────────────────
-//
-// Returns a one-time snapshot of a family's race so a spectator can
-// see their current state when clicking a family in the Record modal.
-//
-// Only works when the race for that family is currently RUNNING.
-// After this call, the spectator should also emit `spectate_room` over
-// Socket.IO to receive ongoing `race:state_update` broadcasts.
-//
-// Query params:
-//   raceId    (required)
-//   familyId  (required)  — the family to watch
-//   dayNumber (required)  — 1, 2, or 3
-//
-// Response:
-//   { allowed: true,  groupNumber, familyState, leaderboard }
-//   { allowed: false, reason: '...' }
-
-router.get('/spectate', async (req, res) => {
-  try {
-    const { raceId, familyId, dayNumber } = req.query;
-    if (!raceId || !familyId || !dayNumber) {
-      return res.status(400).json({ error: 'raceId_familyId_dayNumber_required' });
-    }
-    const snapshot = await gameCtx.getSpectatorSnapshot(
-      redis, raceId, familyId, parseInt(dayNumber, 10)
-    );
-    return res.json(snapshot);
-  } catch (err) {
-    console.error('[GET /game/spectate]', err.message);
-    return res.status(500).json({ error: 'internal_error', message: err.message });
-  }
-});
 
 // ─── GET /game/week-leaderboard ───────────────────────────────────────────
 //
@@ -320,7 +259,7 @@ router.get('/week-leaderboard', async (req, res) => {
     if (game) {
       const helpers = require('../utils/helpers');
       weekStart = helpers.addDays(game.race_week_start, 0); // normalize Date obj
-      weekEnd   = helpers.addDays(game.race_start_day, -1); // grouping day (day before race)
+      weekEnd   = helpers.addDays(game.race_start_day, -1); // day before race
     } else {
       // No game scheduled — use last 7 days
       const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -332,19 +271,6 @@ router.get('/week-leaderboard', async (req, res) => {
     }
 
     const topFamilies = await gameCtx.getWeekLeaderboard(db, weekStart, weekEnd);
-
-    // Pad to 20 families so the frontend always shows 20 rows
-    while (topFamilies.length < 20) {
-      topFamilies.push({
-        rank: topFamilies.length + 1,
-        familyId: '',
-        coins: 0,
-        familyName: null,
-        familyImage: null,
-        ownerName: null,
-        ownerImage: null,
-      });
-    }
 
     return res.json({ weekStart, weekEnd, frozen, qualifyLimit, topFamilies });
   } catch (err) {
@@ -496,99 +422,5 @@ router.get('/pre-race-lobby', async (req, res) => {
   }
 });
 
-// ─── GET /game/groups/:dayNumber ──────────────────────────────────────────
-//
-// Returns all 3 groups for a race day with full family info (name, image, owner).
-// Used by the Record page to display group cards with real data.
-//
-// Query params:
-//   raceId     (required)
-//
-// Response:
-// {
-//   raceId, dayNumber,
-//   groups: [
-//     {
-//       groupNumber: 1,
-//       families: [
-//         { familyId, familyName, familyImage, ownerName, ownerImage },
-//         ...
-//       ]
-//     },
-//     ...
-//   ]
-// }
-
-router.get('/groups/:dayNumber', async (req, res) => {
-  try {
-    const { raceId } = req.query;
-    const dayNumber = parseInt(req.params.dayNumber, 10);
-
-    if (!raceId || ![1, 2, 3].includes(dayNumber)) {
-      return res.status(400).json({ error: 'missing_params', required: ['raceId', 'dayNumber(1-3)'] });
-    }
-
-    const keysUtil = require('../utils/keys');
-    const groupsHash = await redis.hgetall(keysUtil.dayGroups(raceId, dayNumber));
-    if (!groupsHash || !groupsHash.group_1) {
-      return res.status(404).json({ error: 'groups_not_assigned' });
-    }
-
-    // Collect all unique familyIds across all groups
-    const allFamilyIds = [];
-    const groupEntries = [];
-    for (let g = 1; g <= 3; g++) {
-      const raw = groupsHash[`group_${g}`];
-      if (!raw) continue;
-      const familyIds = JSON.parse(raw);
-      groupEntries.push({ groupNumber: g, familyIds });
-      allFamilyIds.push(...familyIds);
-    }
-
-    // Fetch family info from MySQL: familyname, image, owner user info
-    let familyInfoMap = {};
-    if (allFamilyIds.length > 0) {
-      const placeholders = allFamilyIds.map(() => '?').join(',');
-      const rows = await db.query(
-        `SELECT g.id AS familyId, g.familyname, g.image AS familyImage,
-                u.id AS ownerId, u.name AS ownerName, u.image AS ownerImage,
-                (SELECT COUNT(*) FROM groupsmembers gm WHERE gm.familyId = g.id AND gm.memberStatus = '1') AS memberCount
-           FROM \`groups\` g
-           LEFT JOIN users u ON u.id = g.userId
-          WHERE g.id IN (${placeholders})`,
-        allFamilyIds
-      );
-      for (const row of rows) {
-        familyInfoMap[String(row.familyId)] = {
-          familyId:    String(row.familyId),
-          familyName:  row.familyname || '',
-          familyImage: row.familyImage || '',
-          ownerName:   row.ownerName || '',
-          ownerImage:  row.ownerImage || '',
-          memberCount: parseInt(row.memberCount, 10) || 0,
-        };
-      }
-    }
-
-    // Build response
-    const groups = groupEntries.map(({ groupNumber, familyIds }) => ({
-      groupNumber,
-      families: familyIds.map(fid => familyInfoMap[String(fid)] || {
-        familyId: String(fid),
-        familyName: '',
-        familyImage: '',
-        ownerName: '',
-        ownerImage: '',
-        memberCount: 0,
-      }),
-    }));
-
-    return res.json({ raceId, dayNumber, groups });
-
-  } catch (err) {
-    console.error('[GET /game/groups/:dayNumber]', err.message);
-    return res.status(500).json({ error: 'internal_error', message: err.message });
-  }
-});
 
 module.exports = router;

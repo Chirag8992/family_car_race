@@ -37,6 +37,49 @@ const env             = require('../config/env');
 // In-memory map: memberId → socketId (for personal events)
 const memberSockets = new Map();
 
+/**
+ * Broadcasts active member counts per family to all users in the room.
+ * Called on join/leave/disconnect to keep everyone's UI in sync.
+ */
+async function broadcastActiveCounts(io, redis, raceId, dayNumber, groupNumber) {
+  try {
+    const room = `${raceId}:d${dayNumber}:g${groupNumber}`;
+
+    // Get families for this group
+    const raceMeta = await redis.hgetall(keys.raceMeta(raceId, parseInt(dayNumber, 10), parseInt(groupNumber, 10)));
+    let familiesRaw = raceMeta && raceMeta.families ? JSON.parse(raceMeta.families) : [];
+    if (familiesRaw.length === 0) {
+      const groupData = await redis.hget(keys.dayGroups(raceId, dayNumber), `group_${groupNumber}`);
+      if (groupData) familiesRaw = JSON.parse(groupData).map(String);
+    }
+    if (familiesRaw.length === 0) return;
+
+    // Get connected members set
+    const connectedMembers = await redis.smembers(keys.connectedMembers(raceId, dayNumber, groupNumber));
+    const connectedSet = new Set(connectedMembers.map(String));
+
+    // For each family, count how many of their activeMembers are currently connected
+    const pipeline = redis.pipeline();
+    for (const fid of familiesRaw) {
+      pipeline.smembers(keys.activeMembers(raceId, dayNumber, groupNumber, fid));
+    }
+    const results = await pipeline.exec();
+
+    const activeCounts = {};
+    for (let i = 0; i < familiesRaw.length; i++) {
+      const [err, members] = results[i];
+      if (err || !members) { activeCounts[familiesRaw[i]] = 0; continue; }
+      // Count members who are both in activeMembers AND currently connected
+      const onlineCount = members.filter(m => connectedSet.has(String(m))).length;
+      activeCounts[familiesRaw[i]] = onlineCount;
+    }
+
+    io.to(room).emit('active_counts_update', { activeCounts });
+  } catch (err) {
+    console.warn('[socket] broadcastActiveCounts error:', err.message);
+  }
+}
+
 // ─── Attach handlers to io ────────────────────────────────────────────────
 
 function attach(io) {
@@ -58,13 +101,14 @@ function attach(io) {
         }
 
         const redis    = redisClient;
-        const familyId = (await redis.hget(keys.memberFamilyInRace(raceId), memberId))
-          || decoded.familyId
-          || '';
+        const familyId = await redis.hget(keys.memberFamilyInRace(raceId), memberId);
 
         // ── 2. Participant check ────────────────────────────────────────
+        // Must be in both participants set AND memberFamilyInRace hash.
+        // This prevents users who joined a race family after grouping,
+        // or switched families, from participating.
         const isParticipant = await redis.sismember(keys.participants(raceId), memberId);
-        if (!isParticipant) {
+        if (!isParticipant || !familyId) {
           socket.emit('error', { message: 'Not a participant' });
           return;
         }
@@ -168,8 +212,17 @@ function attach(io) {
 
         socket.emit('joined', snapshot);
 
+        // If the member's car is already stopped (missed the original car_stopped event
+        // or joined late), send a personal car_stopped so the client enables the restart button.
+        if (snapshot.family_states?.[familyId]?.is_running === '0' && !snapshot.restart_already_used) {
+          socket.emit('car_stopped', { familyId });
+        }
+
+        // Broadcast updated active counts to all users in the room
+        await broadcastActiveCounts(io, redisClient, raceId, parsedDay, parsedGroup);
+
       } catch (err) {
-        console.error('[socket] join_room error:', err.message);
+        console.error('[socket] join_room error:',  err.message);
         socket.emit('error', { message: 'Failed to join room' });
       }
     });
@@ -289,6 +342,10 @@ function attach(io) {
         socket.leave(room);
         await redisClient.srem(keys.connectedMembers(raceId, dayNumber, groupNumber), memberId);
         memberSockets.delete(memberId);
+
+        // Broadcast updated active counts after member leaves
+        await broadcastActiveCounts(io, redisClient, raceId, dayNumber, groupNumber);
+
         memberContext = null;
       } catch (err) {
         console.error('[socket] leave_room error:', err.message);
@@ -304,6 +361,10 @@ function attach(io) {
             keys.connectedMembers(raceId, dayNumber, groupNumber), memberId
           );
           memberSockets.delete(memberId);
+
+          // Broadcast updated active counts after disconnect
+          await broadcastActiveCounts(io, redisClient, raceId, dayNumber, groupNumber);
+
           memberContext = null;
         }
       } catch (err) {
@@ -386,6 +447,28 @@ async function buildJoinSnapshot(redis, raceId, dayNumber, groupNumber, memberId
     // Read authoritative countdown from Redis start_trigger TTL
     const ttl = await redis.ttl(keys.gameStartTrigger(raceId, dayNumber));
     snapshot.seconds_until_start = ttl > 0 ? ttl : 0;
+
+    // Include pit boost data for all families so opponent boosts are visible on refresh
+    const gm = await redis.hgetall(keys.gameMeta(raceId));
+    const raceDate = gm ? gm[`day${dayNumber}_date`] : null;
+    if (raceDate && familiesRaw.length > 0) {
+      const boostPipeline = redis.pipeline();
+      for (const fid of familiesRaw) {
+        boostPipeline.get(keys.familyBoost(raceId, dayNumber, raceDate, fid));
+      }
+      const boostResults = await boostPipeline.exec();
+      const pitBoosts = {};
+      familiesRaw.forEach((fid, i) => {
+        const [, val] = boostResults[i];
+        const claims = parseInt(val || '0', 10);
+        pitBoosts[fid] = {
+          pitBoostClaims: claims,
+          projectedBaseSpeed: 100 + (claims * GAME.PIT_BOOST_PER_UNIT),
+        };
+      });
+      snapshot.pit_boosts = pitBoosts;
+    }
+
     return snapshot;
   }
 

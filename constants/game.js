@@ -21,10 +21,10 @@ module.exports = Object.freeze({
   TICK_INTERVAL_MS: 1000,
 
   /** Minute mark at which fuel window 1 opens (T=14:00). */
-  FUEL_WINDOW_1_MINUTE: 14,
+  FUEL_WINDOW_1_MINUTE: 5,
 
   /** Minute mark at which fuel window 2 opens (T=44:00). */
-  FUEL_WINDOW_2_MINUTE: 44,
+  FUEL_WINDOW_2_MINUTE: 10,
 
   /** How long each fuel window stays open in seconds. */
   FUEL_WINDOW_DURATION_SEC: 59,
@@ -80,7 +80,7 @@ module.exports = Object.freeze({
   // ─── Pit Stops ───────────────────────────────────────────────────────────
 
   /** How long each pit stop window stays open in seconds (1 hour). */
-  PIT_WINDOW_DURATION_SEC: 3600,
+  PIT_WINDOW_DURATION_SEC: 300,
 
   /** Pit window keys — match cron times exactly. */
   PIT_WINDOWS: Object.freeze(['morning', 'afternoon', 'evening']),

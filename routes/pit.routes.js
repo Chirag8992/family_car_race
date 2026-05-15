@@ -50,7 +50,14 @@ function todayIST() {
 
 router.post('/claim', async (req, res) => {
   const { raceId, dayNumber, groupNumber } = req.body || {};
-  const { memberId, familyId } = req.user;
+  const { memberId } = req.user;
+
+  // Resolve familyId from Redis — authoritative source from grouping time
+  const familyId = await redisClient.hget(keys.memberFamilyInRace(raceId), String(memberId));
+
+  if (!familyId) {
+    return res.status(400).json({ error: 'family_not_found' });
+  }
 
   // Try clock-based key first; fall back to scanning which key is actually open
   let windowKey = currentWindowKey();
@@ -80,10 +87,27 @@ router.post('/claim', async (req, res) => {
     const io = ioSingleton.get();
     if (io && groupNumber) {
       const room = `${raceId}:d${dayNumber}:g${groupNumber}`;
+
+      // Fetch updated member list for the claiming family so open dialogs refresh
+      let pitMembers = [];
+      let contributedCount = 0;
+      try {
+        pitMembers = await reportService.getPitMemberList(
+          redisClient, db, raceId, parseInt(dayNumber, 10),
+          parseInt(groupNumber, 10), familyId, today
+        );
+        contributedCount = pitMembers.filter(m => m.total_claims > 0).length;
+      } catch (e) {
+        console.warn('[pit] member list fetch for broadcast failed:', e.message);
+      }
+
       io.to(room).emit('pit_boost_updated', {
         familyId,
         familyTotalBoost: result.familyTotalBoost,
         projectedBaseSpeed: 100 + result.familyTotalBoost,
+        contributedCount,
+        totalMembers: pitMembers.length,
+        members: pitMembers,
       });
     }
 

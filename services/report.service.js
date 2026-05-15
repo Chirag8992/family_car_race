@@ -43,7 +43,7 @@ const GAME  = require('../constants/game');
 async function getPitMemberList(redis, db, raceId, dayNumber, groupNumber, familyId, date) {
   // 1. All members of this family from MySQL — JOIN users for name + image
   const members = await db.query(
-    `SELECT gm.userId, gm.memberStatus, u.name, u.image
+    `SELECT gm.userId, gm.memberStatus, u.username, u.name, u.image
        FROM groupsmembers gm
        LEFT JOIN users u ON u.id = gm.userId
       WHERE gm.familyId = ?`,
@@ -84,7 +84,7 @@ async function getPitMemberList(redis, db, raceId, dayNumber, groupNumber, famil
   members.forEach(m => {
     memberInfoMap[String(m.userId)] = {
       memberStatus: m.memberStatus,
-      name:         m.name || '',
+      name:         m.username || m.name || '',
       image:        m.image || '',
     };
   });
@@ -135,7 +135,7 @@ async function getPitMemberList(redis, db, raceId, dayNumber, groupNumber, famil
 async function getFamilyInventory(redis, db, raceId, dayNumber, groupNumber, familyId) {
   // 1. All members of this family — include name + image via JOIN
   const members = await db.query(
-    `SELECT gm.userId, gm.memberStatus, u.name, u.image
+    `SELECT gm.userId, gm.memberStatus, u.username, u.name, u.image
        FROM groupsmembers gm
        LEFT JOIN users u ON u.id = gm.userId
       WHERE gm.familyId = ?`,
@@ -148,10 +148,14 @@ async function getFamilyInventory(redis, db, raceId, dayNumber, groupNumber, fam
   // Build name/image lookup
   const memberInfoMap = {};
   members.forEach(m => {
-    memberInfoMap[String(m.userId)] = { name: m.name || '', image: m.image || '' };
+    memberInfoMap[String(m.userId)] = { name: m.username || m.name || '', image: m.image || '' };
   });
 
-  // 2. Who is active in this race (did any action: crystal, egg, wiper, fuel, socket join)
+  // 2. Who is currently connected to the socket room (live online status)
+  const connectedKey = keys.connectedMembers(raceId, dayNumber, groupNumber);
+  const connectedSet = new Set(await redis.smembers(connectedKey));
+
+  // Also check activeMembers for fallback (has done any action this session)
   const activeMembersKey = keys.activeMembers(raceId, dayNumber, groupNumber, familyId);
   const activeSet = new Set(await redis.smembers(activeMembersKey));
 
@@ -174,7 +178,7 @@ async function getFamilyInventory(redis, db, raceId, dayNumber, groupNumber, fam
     const eggs_used   = err ? 0 : parseInt(fields[0] || '0', 10);
     const wipers_used = err ? 0 : parseInt(fields[1] || '0', 10);
     const total_actions = eggs_used + wipers_used;
-    const is_active   = activeSet.has(memberId);
+    const is_active   = connectedSet.has(memberId) || activeSet.has(memberId);
     const info = memberInfoMap[memberId] || {};
 
     const entry = {

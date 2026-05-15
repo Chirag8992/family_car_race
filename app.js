@@ -26,7 +26,7 @@ const authRoutes        = require('./routes/auth.routes');
 const adminRoutes       = require('./routes/admin.routes');
 const raceRoutes        = require('./routes/race.routes');
 const pitRoutes         = require('./routes/pit.routes');
-const leaderboardRoutes = require('./routes/leaderboard.routes');
+// const leaderboardRoutes = require('./routes/leaderboard.routes');
 const gameRoutes        = require('./routes/game.routes');
 
 const db             = require('./config/mysql');
@@ -130,14 +130,14 @@ function createApp(redisClient) {
   app.use(`${PREFIX}/admin`,       authenticate, admin, adminRoutes);
   app.use(`${PREFIX}/race`,        authenticate, participant(redisClient), raceRoutes);
   app.use(`${PREFIX}/pit`,         authenticate, participant(redisClient), pitRoutes);
-  app.use(`${PREFIX}/leaderboard`, authenticate, leaderboardRoutes);
+  // app.use(`${PREFIX}/leaderboard`, authenticate, leaderboardRoutes);
 
   // ── GET /user/profile — returns current user's name, image, family info ──
   app.get(`${PREFIX}/user/profile`, authenticate, async (req, res) => {
     try {
       const userId = req.user.memberId || req.user.userID;
       const rows = await db.query(
-        `SELECT u.id, u.name, u.image,
+        `SELECT u.id, u.name, u.username, u.image,
                 gm.familyId,
                 g.familyname AS familyName,
                 g.image AS familyImage
@@ -154,7 +154,7 @@ function createApp(redisClient) {
       }
       return res.json({
         userId:      user.id,
-        name:        user.name || '',
+        name:        user.username || user.name || '',
         image:       user.image || '',
         familyId:    user.familyId ? String(user.familyId) : null,
         familyName:  user.familyName || '',

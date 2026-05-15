@@ -67,6 +67,8 @@ async function checkFuelWindow(redis, raceId, dayNumber, groupNumber, windowInde
         continue;
       }
       statePipeline.hset(stateKey, 'is_running', '0', 'fuel_status', 'stopped');
+      // Clear old restart flag so the family can restart again after this new stop
+      statePipeline.del(keys.familyRestartFueled(raceId, dayNumber, groupNumber, families[i]));
       stopped.push(families[i]);
     } else {
       statePipeline.hset(stateKey, 'fuel_status', 'ok');

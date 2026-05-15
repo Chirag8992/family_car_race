@@ -17,6 +17,7 @@ const gameService = require('../services/game.service');
 const { redisClient } = require('../config/redis');
 const db          = require('../config/mysql');
 const ioSingleton = require('../socket/io');
+const keys        = require('../utils/keys');
 
 const connection = { host: env.REDIS_PARTYROOM_URL, port: env.REDIS_PORT };
 
@@ -34,7 +35,7 @@ function currentISTHour() {
  * Cron fires at 8:00, 14:00, 19:00 IST.
  */
 function pitWindowKeyFromISTHour(istHour) {
-  const map = { 8: 'morning', 14: 'afternoon', 20: 'evening' };
+  const map = { 8: 'morning', 10: 'afternoon', 15: 'evening' };
   return map[istHour] ?? null;
 }
 

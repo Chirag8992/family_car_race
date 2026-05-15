@@ -146,7 +146,7 @@ async function resolveGameContext(memberId, db, redis) {
     );
     let weekStart, weekEnd;
     if (latestGame) {
-      weekStart = helpers.addDays(latestGame.race_week_start, 0);
+      weekStart = helpers.addDays(latestGame.race_week_start, 0); // normalize Date obj
       weekEnd   = helpers.addDays(latestGame.race_start_day, -1);
     }
     const weekLeaderboard = await getWeekLeaderboard(db, weekStart, weekEnd);
@@ -183,22 +183,11 @@ async function resolveGameContext(memberId, db, redis) {
     familyId = await redis.hget(keys.memberFamilyInRace(game.id), memberId);
   }
 
-  // Fallback: if not in participants set, try to find via family membership in groups.
-  // This handles manual grouping or cases where participants set wasn't populated.
-  if (!familyId && dayNumber) {
-    const memberFamilyRows = await db.query(
-      `SELECT familyId FROM groupsmembers WHERE userId = ? AND memberStatus = '1' LIMIT 1`,
-      [memberId]
-    );
-    if (memberFamilyRows.length > 0) {
-      const candidateFamilyId = String(memberFamilyRows[0].familyId);
-      const foundGroup = await resolveFamilyGroup(redis, game.id, dayNumber, candidateFamilyId);
-      if (foundGroup) {
-        familyId = candidateFamilyId;
-        groupNumber = foundGroup;
-      }
-    }
-  }
+  // NOTE: We intentionally do NOT fall back to the live groupsmembers table.
+  // The memberFamilyInRace hash is populated at grouping time and is the
+  // authoritative record of who can participate. This ensures:
+  //   - Users who join a race family AFTER grouping → treated as spectator
+  //   - Users who leave their race family and join another → treated as spectator
 
   if (!familyId) {
     return { mode: 'spectator', race: { ...raceInfo, dayNumber } };
@@ -237,39 +226,85 @@ async function resolveGameContext(memberId, db, redis) {
  * @param {string} weekEnd   — "YYYY-MM-DD" (race_start_day - 1, i.e. grouping day)
  */
 async function getWeekLeaderboard(db, weekStart, weekEnd) {
+  // console.log(`[week-leaderboard] Query date range: ${weekStart} → ${weekEnd}`);
+
   // Fallback to current week Monday–Thursday if not provided
   if (!weekStart) weekStart = currentWeekMondayIST();
   if (!weekEnd) weekEnd = currentWeekThursdayIST();
 
+  // console.log(`[week-leaderboard] Query date range: ${weekStart} → ${weekEnd}`);
   try {
+    // 1) Families with silverExp during race week, sorted by coins DESC
     const rows = await db.query(
-      `SELECT gde.familyId,
-              SUM(gde.silverExp) AS total_coins,
-              g.familyname,
-              g.image AS familyImage,
-              u.name  AS ownerName,
-              u.image AS ownerImage
-         FROM groups_daily_exp gde
-         LEFT JOIN \`groups\` g ON g.id = gde.familyId
-         LEFT JOIN users u ON u.id = g.userId
-        WHERE gde.date >= ? AND gde.date <= ?
-        GROUP BY gde.familyId, g.familyname, g.image, u.name, u.image
-        ORDER BY total_coins DESC
-        LIMIT 20`,
+        `SELECT gde.familyId,
+                SUM(gde.silverExp) AS total_coins,
+                g.familyname,
+                g.image AS familyImage,
+                g.familyLevel,
+                COALESCE(u.username, u.name) AS ownerName,
+                u.image AS ownerImage
+          FROM groups_daily_exp gde
+          LEFT JOIN \`groups\` g ON g.id = gde.familyId
+          LEFT JOIN users u ON u.id = g.userId
+          WHERE gde.date >= ? AND gde.date <= ?
+          GROUP BY gde.familyId, g.familyname, g.image, g.familyLevel, u.username, u.name, u.image
+          HAVING total_coins > 0
+          ORDER BY total_coins DESC, g.familyLevel DESC
+          LIMIT 20`,
       [weekStart, weekEnd]
     );
+    // console.log(rows)
 
-    return rows.map((r, i) => ({
+    const results = rows.map((r, i) => ({
       rank:       i + 1,
       familyId:   String(r.familyId),
       coins:      parseInt(r.total_coins, 10),
       familyName: r.familyname || null,
       familyImage: r.familyImage || null,
+      familyLevel: r.familyLevel || 0,
       ownerName:  r.ownerName || null,
       ownerImage: r.ownerImage || null,
     }));
+
+    // 2) If fewer than 20, fill remaining with families by familyLevel (no race-week exp)
+    if (results.length < 20) {
+      const existingIds = results.map(r => r.familyId);
+      const placeholders = existingIds.length > 0
+        ? `AND g.id NOT IN (${existingIds.map(() => '?').join(',')})`
+        : '';
+      const remaining = 20 - results.length;
+
+      const fillRows = await db.query(
+        `SELECT g.id AS familyId,
+                g.familyname,
+                g.image AS familyImage,
+                g.familyLevel,
+                COALESCE(u.username, u.name) AS ownerName,
+                u.image AS ownerImage
+           FROM \`groups\` g
+           LEFT JOIN users u ON u.id = g.userId
+          WHERE g.is_dismissed = 0 ${placeholders}
+          ORDER BY g.familyLevel DESC
+          LIMIT ?`,
+        [...existingIds, remaining]
+      );
+
+      for (const r of fillRows) {
+        results.push({
+          rank:       results.length + 1,
+          familyId:   String(r.familyId),
+          coins:      0,
+          familyName: r.familyname || null,
+          familyImage: r.familyImage || null,
+          familyLevel: r.familyLevel || 0,
+          ownerName:  r.ownerName || null,
+          ownerImage: r.ownerImage || null,
+        });
+      }
+    }
+
+    return results;
   } catch (err) {
-    // Table may not exist yet in dev — return empty gracefully
     console.warn('[game-context] week leaderboard query failed:', err.message);
     return [];
   }

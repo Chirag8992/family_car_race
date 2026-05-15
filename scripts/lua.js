@@ -110,6 +110,9 @@ const SCRIPTS = {
     local new_speed = math.min(max_speed, speed + boost)
     redis.call('HSET', KEYS[1], 'current_speed', tostring(new_speed))
     redis.call('HINCRBY', KEYS[2], 'crystals', -amount)
+    local ep = tonumber(redis.call('HGET', KEYS[1], 'egg_penalty')) or 0
+    local new_ep = math.max(0, ep - amount)
+    redis.call('HSET', KEYS[1], 'egg_penalty', tostring(new_ep))
     return new_speed
   `,
 

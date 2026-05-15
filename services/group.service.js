@@ -39,7 +39,6 @@ async function computeDay1Groups(raceId, raceWeekStart, groupingDate, db, redis)
       LIMIT 9`,
     [raceWeekStart, groupingDate]
   );
-
   // Fix #16: Fail loudly if there aren't exactly 9 qualifying families.
   if (!rows || rows.length < 9) {
     throw new Error(

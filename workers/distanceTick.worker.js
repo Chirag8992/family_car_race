@@ -72,7 +72,7 @@ const worker = new Worker(
       for (const familyId of families) {
         pipeline.hmget(
           keys.familyState(raceId, dayNumber, groupNumber, familyId),
-          'is_running', 'distance_traveled', 'current_speed', 'fuel_status', 'max_speed'
+          'is_running', 'distance_traveled', 'current_speed', 'fuel_status', 'max_speed', 'egg_penalty'
         );
       }
       const stateResults = await pipeline.exec();
@@ -85,7 +85,7 @@ const worker = new Worker(
         const [err, vals] = stateResults[i];
         if (err || !vals) continue;
 
-        const [isRunning, distStr, speedStr, fuelStatus, maxSpeedStr] = vals;
+        const [isRunning, distStr, speedStr, fuelStatus, maxSpeedStr, eggPenaltyStr] = vals;
         const distanceTraveled = parseFloat(distStr || '0');
         const currentSpeed     = parseInt(speedStr || '0', 10);
 
@@ -111,6 +111,7 @@ const worker = new Worker(
           distance_traveled: newDistance,
           is_running:        isRunning,
           fuel_status:       fuelStatus || '',
+          egg_penalty:       parseInt(eggPenaltyStr || '0', 10),
         };
       }
       await updatePipeline.exec();

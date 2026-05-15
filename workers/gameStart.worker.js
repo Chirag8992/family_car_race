@@ -88,6 +88,8 @@ async function onStartTrigger({ raceId, dayNumber }) {
 
     // c. Write initial state for each family
     for (const familyId of families) {
+      // Clear any stale restart flag from a previous run
+      await redis.del(keys.familyRestartFueled(raceId, dayNumber, groupNumber, familyId));
       await raceService.initFamilyState(
         redis, raceId, dayNumber, groupNumber, familyId,
         baseSpeeds[groupNumber][familyId], startedAt

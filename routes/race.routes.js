@@ -54,12 +54,13 @@ function validateRaceParams(res, raceId, dayNumber, groupNumber) {
 
 /**
  * Resolve the familyId that is actually registered in this race for the
- * given memberId.  Falls back to the JWT value if the Redis key is missing
- * (e.g. grouping worker hasn't run yet in dev).
+ * given memberId. Only uses the authoritative Redis hash set at grouping time.
+ * Returns null if the member has no race family assignment (should not happen
+ * if requireParticipant middleware passed).
  */
-async function resolveFamily(raceId, memberId, jwtFamilyId) {
+async function resolveFamily(raceId, memberId, _jwtFamilyId) {
   const id = await redisClient.hget(keys.memberFamilyInRace(raceId), memberId);
-  return id || jwtFamilyId;
+  return id || null;
 }
 
 /**
@@ -173,7 +174,21 @@ router.post('/egg/throw', async (req, res) => {
     const io = ioSingleton.get();
     if (io) {
       const room = `${raceId}:d${dayNumber}:g${groupNumber}`;
-      io.to(room).emit('egg_hit', { targetFamilyId, new_speed: newSpeed, wasted });
+      // Fetch attacker's name and image for attribution
+      let attackerName = '';
+      let attackerImage = '';
+      try {
+        const [row] = await db.query('SELECT username, name, image FROM users WHERE id = ? LIMIT 1', [memberId]);
+        if (row) { attackerName = row.username || row.name || ''; attackerImage = row.image || ''; }
+      } catch (_) {}
+      io.to(room).emit('egg_hit', {
+        targetFamilyId,
+        new_speed: newSpeed,
+        wasted,
+        attackerFamilyId: familyId,
+        attackerName,
+        attackerImage,
+      });
     }
 
     return res.json({ wasted, targetFamilyId, new_speed: newSpeed, crystals: remainingCrystals });
@@ -209,7 +224,14 @@ router.post('/wiper/use', async (req, res) => {
     const io = ioSingleton.get();
     if (io) {
       const room = `${raceId}:d${dayNumber}:g${groupNumber}`;
-      io.to(room).emit('wiper_used', { familyId, new_speed: newSpeed });
+      // Fetch member's name and image for attribution
+      let memberName = '';
+      let memberImage = '';
+      try {
+        const [row] = await db.query('SELECT username, name, image FROM users WHERE id = ? LIMIT 1', [memberId]);
+        if (row) { memberName = row.username || row.name || ''; memberImage = row.image || ''; }
+      } catch (_) {}
+      io.to(room).emit('wiper_used', { familyId, new_speed: newSpeed, memberName, memberImage });
     }
 
     return res.json({ current_speed: newSpeed, crystals: remainingCrystals });
@@ -267,64 +289,6 @@ router.post('/fuel/submit', async (req, res) => {
   }
 });
 
-// ─── GET inventory ────────────────────────────────────────────────────────────
-
-router.get('/inventory', async (req, res) => {
-  const { raceId, dayNumber, groupNumber } = req.query || {};
-  if (!validateRaceParams(res, raceId, dayNumber, groupNumber)) return; // Fix #2
-
-  const { memberId } = req.user;
-  try {
-    const inv = await crystalService.getMemberInventory(
-      redisClient, raceId, dayNumber, groupNumber, memberId
-    );
-    return res.json(inv);
-  } catch (err) {
-    return res.status(500).json({ error: 'internal_error' });
-  }
-});
-
-// ─── GET live leaderboard ─────────────────────────────────────────────────────
-
-router.get('/leaderboard', async (req, res) => {
-  const { raceId, dayNumber, groupNumber } = req.query || {};
-  if (!validateRaceParams(res, raceId, dayNumber, groupNumber)) return; // Fix #2
-
-  try {
-    const lb = await lbService.getLiveLeaderboard(redisClient, raceId, dayNumber, groupNumber);
-    return res.json(lb);
-  } catch (err) {
-    return res.status(500).json({ error: 'internal_error' });
-  }
-});
-
-// ─── GET family state ───────────────────────────────────────────────────────────
-
-router.get('/state', async (req, res) => {
-  const { raceId, dayNumber, groupNumber } = req.query || {};
-  if (!validateRaceParams(res, raceId, dayNumber, groupNumber)) return; // Fix #2
-
-  const { memberId } = req.user;
-  const familyId = await resolveFamily(raceId, memberId, req.user.familyId);
-  try {
-    const state = await raceService.getFamilyState(
-      redisClient, raceId, dayNumber, groupNumber, familyId
-    );
-    console.log('Fetched family state:', state);
-    if (!state) return res.status(404).json({ error: 'race_not_active' });
-    return res.json({
-      current_speed:     parseInt(state.current_speed, 10),
-      max_speed:         parseInt(state.max_speed, 10),
-      base_speed:        parseInt(state.base_speed, 10),
-      distance_traveled: parseFloat(state.distance_traveled),
-      is_running:        state.is_running === '1',
-      fuel_status:       state.fuel_status,
-    });
-  } catch (err) {
-    return res.status(500).json({ error: 'internal_error' });
-  }
-});
-
 // ─── GET family inventory details ─────────────────────────────────────────────
 
 /**
@@ -350,13 +314,14 @@ router.get('/state', async (req, res) => {
  * }
  */
 router.get('/family-inventory', async (req, res) => {
-  const { raceId, dayNumber, groupNumber } = req.query || {};
+  const { raceId, dayNumber, groupNumber, familyId: queryFamilyId } = req.query || {};
   if (!validateRaceParams(res, raceId, dayNumber, groupNumber)) return;
 
   const { memberId } = req.user;
 
   try {
-    const familyId = await resolveFamily(raceId, memberId, req.user.familyId);
+    // If familyId provided in query, use it (for viewing any family); otherwise resolve from user
+    const familyId = queryFamilyId || await resolveFamily(raceId, memberId, req.user.familyId);
     if (!await verifyMemberGroup(res, raceId, dayNumber, groupNumber, familyId)) return;
 
     const members = await reportService.getFamilyInventory(
