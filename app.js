@@ -30,6 +30,7 @@ const pitRoutes         = require('./routes/pit.routes');
 const gameRoutes        = require('./routes/game.routes');
 
 const db             = require('./config/mysql');
+const cacheManager   = require('./utils/Cache_manager');
 const socketHandlers = require('./socket/handlers');
 
 function createApp(redisClient) {
@@ -136,29 +137,32 @@ function createApp(redisClient) {
   app.get(`${PREFIX}/user/profile`, authenticate, async (req, res) => {
     try {
       const userId = req.user.memberId || req.user.userID;
-      const rows = await db.query(
-        `SELECT u.id, u.name, u.username, u.image,
-                gm.familyId,
-                g.familyname AS familyName,
-                g.image AS familyImage
-           FROM users u
-           LEFT JOIN groupsmembers gm ON gm.userId = u.id AND gm.memberStatus = '1'
-           LEFT JOIN \`groups\` g ON g.id = gm.familyId
-          WHERE u.id = ?
-          LIMIT 1`,
-        [userId]
-      );
-      const user = Array.isArray(rows) ? rows[0] : rows;
+      const user = await cacheManager.getOrCache('user', userId);
       if (!user) {
         return res.status(404).json({ error: 'user_not_found' });
       }
+
+      let familyId = user.family || null;
+      let familyName = '';
+      let familyImage = '';
+
+      if (familyId) {
+        try {
+          const family = await cacheManager.getOrCache('family', familyId);
+          if (family) {
+            familyName = family.familyname || '';
+            familyImage = family.image || '';
+          }
+        } catch (_) {}
+      }
+
       return res.json({
-        userId:      user.id,
-        name:        user.username || user.name || '',
+        userId:      user.user_id,
+        name:        user.username || '',
         image:       user.image || '',
-        familyId:    user.familyId ? String(user.familyId) : null,
-        familyName:  user.familyName || '',
-        familyImage: user.familyImage || '',
+        familyId:    familyId ? String(familyId) : null,
+        familyName,
+        familyImage,
       });
     } catch (err) {
       console.error('[GET /user/profile]', err.message);

@@ -16,6 +16,8 @@ const express    = require('express');
 const router     = express.Router();
 const db         = require('../config/mysql');
 const { redisClient: redis } = require('../config/redis');
+const cacheManager = require('../utils/Cache_manager');
+const moment     = require('moment-timezone');
 
 const gameCtx    = require('../services/game-context.service');
 const lbService  = require('../services/leaderboard.service');
@@ -160,21 +162,33 @@ router.get('/record-overview', async (req, res) => {
           groupStatus = 'finished';
         }
 
-        // Get family info from MySQL
+        // Get family info from cache + member counts from DB
         let familyInfoMap = {};
         if (familyIds.length > 0) {
-          const placeholders = familyIds.map(() => '?').join(',');
-          const infoRows = await db.query(
-            `SELECT g.id AS familyId, g.familyname AS familyName, g.image AS familyImage,
-                    COALESCE(u.username, u.name) AS ownerName, u.image AS ownerImage,
-                    (SELECT COUNT(*) FROM users WHERE familyId = g.id) AS memberCount
-               FROM \`groups\` g
-               LEFT JOIN users u ON u.id = g.userId
-              WHERE g.id IN (${placeholders})`,
+          const families = await cacheManager.getMultipleOrCache('family', familyIds);
+          const ownerIds = families.filter(f => f && f.userId).map(f => f.userId);
+          const owners = ownerIds.length > 0 ? await cacheManager.getMultipleOrCache('user', ownerIds) : [];
+          const ownerMap = {};
+          for (const o of owners) { if (o) ownerMap[String(o.user_id)] = o; }
+
+          const memberCountRows = await db.query(
+            `SELECT familyId, COUNT(*) AS cnt FROM groupsmembers WHERE familyId IN (${familyIds.map(() => '?').join(',')}) AND memberStatus = '1' GROUP BY familyId`,
             familyIds
           );
-          for (const row of infoRows) {
-            familyInfoMap[String(row.familyId)] = row;
+          const memberCountMap = {};
+          for (const row of memberCountRows) memberCountMap[String(row.familyId)] = parseInt(row.cnt, 10) || 0;
+
+          for (const f of families) {
+            if (f) {
+              const owner = ownerMap[String(f.userId)] || {};
+              familyInfoMap[String(f.id)] = {
+                familyName: f.familyname || '',
+                familyImage: f.image || '',
+                ownerName: owner.username || '',
+                ownerImage: owner.image || '',
+                memberCount: memberCountMap[String(f.id)] || 0,
+              };
+            }
           }
         }
 
@@ -262,12 +276,9 @@ router.get('/week-leaderboard', async (req, res) => {
       weekEnd   = helpers.addDays(game.race_start_day, -1); // day before race
     } else {
       // No game scheduled — use last 7 days
-      const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-      const nowIST = new Date(Date.now() + IST_OFFSET_MS);
-      weekEnd   = nowIST.toISOString().slice(0, 10);
-      const sevenAgo = new Date(nowIST);
-      sevenAgo.setDate(sevenAgo.getDate() - 6);
-      weekStart = sevenAgo.toISOString().slice(0, 10);
+      const nowIST = moment().tz('Asia/Kolkata');
+      weekEnd   = nowIST.format('YYYY-MM-DD');
+      weekStart = nowIST.clone().subtract(6, 'days').format('YYYY-MM-DD');
     }
 
     const topFamilies = await gameCtx.getWeekLeaderboard(db, weekStart, weekEnd);

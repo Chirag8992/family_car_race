@@ -27,6 +27,7 @@ const { redisClient } = require('../config/redis');
 const ioSingleton     = require('../socket/io');
 const handlers        = require('../socket/handlers');
 const db              = require('../config/mysql');
+const cacheManager    = require('../utils/Cache_manager');
 
 const router = Router();
 
@@ -174,12 +175,11 @@ router.post('/egg/throw', async (req, res) => {
     const io = ioSingleton.get();
     if (io) {
       const room = `${raceId}:d${dayNumber}:g${groupNumber}`;
-      // Fetch attacker's name and image for attribution
       let attackerName = '';
       let attackerImage = '';
       try {
-        const [row] = await db.query('SELECT username, name, image FROM users WHERE id = ? LIMIT 1', [memberId]);
-        if (row) { attackerName = row.username || row.name || ''; attackerImage = row.image || ''; }
+        const userData = await cacheManager.getOrCache('user', memberId);
+        if (userData) { attackerName = userData.username || ''; attackerImage = userData.image || ''; }
       } catch (_) {}
       io.to(room).emit('egg_hit', {
         targetFamilyId,
@@ -224,12 +224,11 @@ router.post('/wiper/use', async (req, res) => {
     const io = ioSingleton.get();
     if (io) {
       const room = `${raceId}:d${dayNumber}:g${groupNumber}`;
-      // Fetch member's name and image for attribution
       let memberName = '';
       let memberImage = '';
       try {
-        const [row] = await db.query('SELECT username, name, image FROM users WHERE id = ? LIMIT 1', [memberId]);
-        if (row) { memberName = row.username || row.name || ''; memberImage = row.image || ''; }
+        const userData = await cacheManager.getOrCache('user', memberId);
+        if (userData) { memberName = userData.username || ''; memberImage = userData.image || ''; }
       } catch (_) {}
       io.to(room).emit('wiper_used', { familyId, new_speed: newSpeed, memberName, memberImage });
     }

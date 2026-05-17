@@ -9,6 +9,7 @@
  */
 
 const { v4: uuidv4 } = require('uuid');
+const moment = require('moment-timezone');
 
 /**
  * Generates a random UUID v4 string.
@@ -23,7 +24,7 @@ function generateUUID() {
  * Workers use this when building pit-stop Redis keys.
  */
 function todayUTCString() {
-  return new Date().toISOString().slice(0, 10);
+  return moment.utc().format('YYYY-MM-DD');
 }
 
 /**
@@ -32,7 +33,7 @@ function todayUTCString() {
  * @returns {string}
  */
 function toDateString(date) {
-  return new Date(date).toISOString().slice(0, 10);
+  return moment(date).format('YYYY-MM-DD');
 }
 
 /**
@@ -42,16 +43,11 @@ function toDateString(date) {
  * @returns {string}        — "YYYY-MM-DD"
  */
 function addDays(dateStr, days) {
-  // Handle MySQL Date objects: convert to "YYYY-MM-DD" in IST
-  // MySQL DATE '2026-05-06' comes as Date(2026-05-05T18:30:00Z) because
-  // the driver interprets it at midnight local (IST = UTC+5:30).
+  // Handle MySQL Date objects: raw value is IST, just format directly
   if (dateStr instanceof Date) {
-    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-    dateStr = new Date(dateStr.getTime() + IST_OFFSET_MS).toISOString().slice(0, 10);
+    dateStr = moment(dateStr).format('YYYY-MM-DD');
   }
-  const d = new Date(dateStr + 'T00:00:00Z');
-  d.setUTCDate(d.getUTCDate() + days);
-  return toDateString(d);
+  return moment(dateStr).add(days, 'days').format('YYYY-MM-DD');
 }
 
 /**
@@ -63,9 +59,9 @@ function addDays(dateStr, days) {
  * @returns {number}        — seconds (always >= 0; returns 0 if already past)
  */
 function secondsUntil(dateStr, timeStr) {
-  // race_start_time is entered in IST (UTC+05:30), so parse with +05:30 offset
-  const target = new Date(`${dateStr}T${timeStr}+05:30`);
-  const delta  = Math.floor((target.getTime() - Date.now()) / 1000);
+  // race_start_time is entered in IST (Asia/Kolkata)
+  const target = moment.tz(`${dateStr} ${timeStr}`, 'YYYY-MM-DD HH:mm:ss', 'Asia/Kolkata');
+  const delta  = Math.floor((target.valueOf() - Date.now()) / 1000);
   return Math.max(0, delta);
 }
 
@@ -193,9 +189,7 @@ function isValidTimeString(str) {
  * @returns {number}
  */
 function isoWeekday(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00Z');
-  const day = d.getUTCDay(); // 0=Sunday
-  return day === 0 ? 7 : day;
+  return moment(dateStr, 'YYYY-MM-DD').isoWeekday(); // Mon=1...Sun=7
 }
 
 module.exports = {
@@ -224,8 +218,7 @@ module.exports = {
  * @returns {string}
  */
 function todayISTString() {
-  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-  return new Date(Date.now() + IST_OFFSET_MS).toISOString().slice(0, 10);
+  return moment().tz('Asia/Kolkata').format('YYYY-MM-DD');
 }
 
 module.exports = Object.assign(module.exports, { todayISTString });

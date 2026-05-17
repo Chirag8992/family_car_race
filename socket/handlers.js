@@ -32,6 +32,7 @@ const crystalService  = require('../services/crystal.service');
 const lbService       = require('../services/leaderboard.service');
 const { redisClient } = require('../config/redis');
 const db              = require('../config/mysql');
+const cacheManager    = require('../utils/Cache_manager');
 const env             = require('../config/env');
 
 // In-memory map: memberId → socketId (for personal events)
@@ -295,20 +296,22 @@ function attach(io) {
         let spectatorFamilyInfo = {};
         if (familiesRaw.length > 0) {
           try {
-            const placeholders = familiesRaw.map(() => '?').join(',');
-            const rows = await db.query(
-              `SELECT g.id AS familyId, g.familyname AS familyName, g.image AS familyImage,
-                      (SELECT COUNT(*) FROM groupsmembers gm WHERE gm.familyId = g.id AND gm.memberStatus = '1') AS memberCount
-                 FROM \`groups\` g
-                WHERE g.id IN (${placeholders})`,
+            const families = await cacheManager.getMultipleOrCache('family', familiesRaw);
+            const memberCountRows = await db.query(
+              `SELECT familyId, COUNT(*) AS cnt FROM groupsmembers WHERE familyId IN (${familiesRaw.map(() => '?').join(',')}) AND memberStatus = '1' GROUP BY familyId`,
               familiesRaw
             );
-            for (const row of rows) {
-              spectatorFamilyInfo[String(row.familyId)] = {
-                familyName:  row.familyName || '',
-                familyImage: row.familyImage || '',
-                memberCount: parseInt(row.memberCount, 10) || 0,
-              };
+            const memberCountMap = {};
+            for (const row of memberCountRows) memberCountMap[String(row.familyId)] = parseInt(row.cnt, 10) || 0;
+
+            for (const f of families) {
+              if (f) {
+                spectatorFamilyInfo[String(f.id)] = {
+                  familyName:  f.familyname || '',
+                  familyImage: f.image || '',
+                  memberCount: memberCountMap[String(f.id)] || 0,
+                };
+              }
             }
           } catch (err) {
             console.warn('[socket] spectator family info lookup failed:', err.message);
@@ -419,20 +422,22 @@ async function buildJoinSnapshot(redis, raceId, dayNumber, groupNumber, memberId
   let familyInfoMap = {};
   if (familiesRaw.length > 0) {
     try {
-      const placeholders = familiesRaw.map(() => '?').join(',');
-      const rows = await db.query(
-        `SELECT g.id AS familyId, g.familyname AS familyName, g.image AS familyImage,
-                (SELECT COUNT(*) FROM groupsmembers gm WHERE gm.familyId = g.id AND gm.memberStatus = '1') AS memberCount
-           FROM \`groups\` g
-          WHERE g.id IN (${placeholders})`,
+      const families = await cacheManager.getMultipleOrCache('family', familiesRaw);
+      const memberCountRows = await db.query(
+        `SELECT familyId, COUNT(*) AS cnt FROM groupsmembers WHERE familyId IN (${familiesRaw.map(() => '?').join(',')}) AND memberStatus = '1' GROUP BY familyId`,
         familiesRaw
       );
-      for (const row of rows) {
-        familyInfoMap[String(row.familyId)] = {
-          familyName:  row.familyName || '',
-          familyImage: row.familyImage || '',
-          memberCount: parseInt(row.memberCount, 10) || 0,
-        };
+      const memberCountMap = {};
+      for (const row of memberCountRows) memberCountMap[String(row.familyId)] = parseInt(row.cnt, 10) || 0;
+
+      for (const f of families) {
+        if (f) {
+          familyInfoMap[String(f.id)] = {
+            familyName:  f.familyname || '',
+            familyImage: f.image || '',
+            memberCount: memberCountMap[String(f.id)] || 0,
+          };
+        }
       }
     } catch (err) {
       console.warn('[socket] family info lookup failed:', err.message);

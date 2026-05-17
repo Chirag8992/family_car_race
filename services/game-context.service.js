@@ -12,20 +12,18 @@
  * Also provides helpers for the week leaderboard (non-race days).
  */
 
-const keys    = require('../utils/keys');
-const helpers = require('../utils/helpers');
-
-const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+const keys         = require('../utils/keys');
+const helpers      = require('../utils/helpers');
+const cacheManager = require('../utils/Cache_manager');
+const moment       = require('moment-timezone');
 
 /**
- * Converts a MySQL DATE value (Date object or string) to "YYYY-MM-DD" in IST.
- * MySQL driver returns DATE '2026-05-10' as Date(2026-05-09T18:30:00Z)
- * because it interprets midnight local (IST). We must add the IST offset
- * before slicing to get the correct date string.
+ * Converts a MySQL DATE value (Date object or string) to "YYYY-MM-DD".
+ * DB stores IST values; the raw Date digits are already IST — just format directly.
  */
 function mysqlDateToIST(d) {
   if (d instanceof Date) {
-    return new Date(d.getTime() + IST_OFFSET_MS).toISOString().slice(0, 10);
+    return moment(d).format('YYYY-MM-DD');
   }
   return String(d).slice(0, 10);
 }
@@ -33,30 +31,24 @@ function mysqlDateToIST(d) {
 // ─── IST date helpers ─────────────────────────────────────────────────────
 
 /**
- * Returns today's date as "YYYY-MM-DD" in IST (UTC+05:30).
+ * Returns today's date as "YYYY-MM-DD" in IST (Asia/Kolkata).
  */
 function todayIST() {
-  const now    = new Date();
-  const offset = 5.5 * 60 * 60 * 1000; // IST = UTC+5:30
-  return new Date(now.getTime() + offset).toISOString().slice(0, 10);
+  return moment().tz('Asia/Kolkata').format('YYYY-MM-DD');
 }
 
 /**
  * Returns the Monday of the current IST week as "YYYY-MM-DD".
  */
 function currentWeekMondayIST() {
-  const today = new Date(todayIST() + 'T00:00:00Z');
-  const dow   = today.getUTCDay(); // 0=Sun, 1=Mon … 6=Sat
-  const diff  = dow === 0 ? -6 : 1 - dow;  // shift to Monday
-  const mon   = new Date(today.getTime() + diff * 86400000);
-  return mon.toISOString().slice(0, 10);
+  return moment().tz('Asia/Kolkata').startOf('isoWeek').format('YYYY-MM-DD');
 }
 
 /**
  * Returns the Thursday of the current IST week (grouping day) as "YYYY-MM-DD".
  */
 function currentWeekThursdayIST() {
-  return helpers.addDays(currentWeekMondayIST(), 3);
+  return moment().tz('Asia/Kolkata').startOf('isoWeek').add(3, 'days').format('YYYY-MM-DD');
 }
 
 // ─── Context resolution ───────────────────────────────────────────────────
@@ -237,34 +229,41 @@ async function getWeekLeaderboard(db, weekStart, weekEnd) {
     // 1) Families with silverExp during race week, sorted by coins DESC
     const rows = await db.query(
         `SELECT gde.familyId,
-                SUM(gde.silverExp) AS total_coins,
-                g.familyname,
-                g.image AS familyImage,
-                g.familyLevel,
-                COALESCE(u.username, u.name) AS ownerName,
-                u.image AS ownerImage
+                SUM(gde.silverExp) AS total_coins
           FROM groups_daily_exp gde
-          LEFT JOIN \`groups\` g ON g.id = gde.familyId
-          LEFT JOIN users u ON u.id = g.userId
           WHERE gde.date >= ? AND gde.date <= ?
-          GROUP BY gde.familyId, g.familyname, g.image, g.familyLevel, u.username, u.name, u.image
+          GROUP BY gde.familyId
           HAVING total_coins > 0
-          ORDER BY total_coins DESC, g.familyLevel DESC
+          ORDER BY total_coins DESC
           LIMIT 20`,
       [weekStart, weekEnd]
     );
-    // console.log(rows)
 
-    const results = rows.map((r, i) => ({
-      rank:       i + 1,
-      familyId:   String(r.familyId),
-      coins:      parseInt(r.total_coins, 10),
-      familyName: r.familyname || null,
-      familyImage: r.familyImage || null,
-      familyLevel: r.familyLevel || 0,
-      ownerName:  r.ownerName || null,
-      ownerImage: r.ownerImage || null,
-    }));
+    // Enrich with family + owner info from cache
+    const familyIds = rows.map(r => r.familyId);
+    const families = familyIds.length > 0 ? await cacheManager.getMultipleOrCache('family', familyIds) : [];
+    const familyMap = {};
+    for (const f of families) { if (f) familyMap[String(f.id)] = f; }
+
+    const ownerIds = families.filter(f => f && f.userId).map(f => f.userId);
+    const owners = ownerIds.length > 0 ? await cacheManager.getMultipleOrCache('user', ownerIds) : [];
+    const ownerMap = {};
+    for (const o of owners) { if (o) ownerMap[String(o.user_id)] = o; }
+
+    const results = rows.map((r, i) => {
+      const family = familyMap[String(r.familyId)] || {};
+      const owner = ownerMap[String(family.userId)] || {};
+      return {
+        rank:       i + 1,
+        familyId:   String(r.familyId),
+        coins:      parseInt(r.total_coins, 10),
+        familyName: family.familyname || null,
+        familyImage: family.image || null,
+        familyLevel: family.familyLevel || 0,
+        ownerName:  owner.username || null,
+        ownerImage: owner.image || null,
+      };
+    });
 
     // 2) If fewer than 20, fill remaining with families by familyLevel (no race-week exp)
     if (results.length < 20) {
@@ -275,31 +274,35 @@ async function getWeekLeaderboard(db, weekStart, weekEnd) {
       const remaining = 20 - results.length;
 
       const fillRows = await db.query(
-        `SELECT g.id AS familyId,
-                g.familyname,
-                g.image AS familyImage,
-                g.familyLevel,
-                COALESCE(u.username, u.name) AS ownerName,
-                u.image AS ownerImage
+        `SELECT g.id AS familyId
            FROM \`groups\` g
-           LEFT JOIN users u ON u.id = g.userId
           WHERE g.is_dismissed = 0 ${placeholders}
           ORDER BY g.familyLevel DESC
           LIMIT ?`,
         [...existingIds, remaining]
       );
 
-      for (const r of fillRows) {
-        results.push({
-          rank:       results.length + 1,
-          familyId:   String(r.familyId),
-          coins:      0,
-          familyName: r.familyname || null,
-          familyImage: r.familyImage || null,
-          familyLevel: r.familyLevel || 0,
-          ownerName:  r.ownerName || null,
-          ownerImage: r.ownerImage || null,
-        });
+      const fillFamilyIds = fillRows.map(r => r.familyId);
+      const fillFamilies = fillFamilyIds.length > 0 ? await cacheManager.getMultipleOrCache('family', fillFamilyIds) : [];
+      const fillOwnerIds = fillFamilies.filter(f => f && f.userId).map(f => f.userId);
+      const fillOwners = fillOwnerIds.length > 0 ? await cacheManager.getMultipleOrCache('user', fillOwnerIds) : [];
+      const fillOwnerMap = {};
+      for (const o of fillOwners) { if (o) fillOwnerMap[String(o.user_id)] = o; }
+
+      for (const f of fillFamilies) {
+        if (f) {
+          const owner = fillOwnerMap[String(f.userId)] || {};
+          results.push({
+            rank:       results.length + 1,
+            familyId:   String(f.id),
+            coins:      0,
+            familyName: f.familyname || null,
+            familyImage: f.image || null,
+            familyLevel: f.familyLevel || 0,
+            ownerName:  owner.username || null,
+            ownerImage: owner.image || null,
+          });
+        }
       }
     }
 

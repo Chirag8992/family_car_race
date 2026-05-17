@@ -24,15 +24,14 @@ const db              = require('../config/mysql');
 const ioSingleton     = require('../socket/io');
 const keys            = require('../utils/keys');
 const GAME            = require('../constants/game');
+const moment          = require('moment-timezone');
 
 const router = Router();
-
-const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
 // Returns the current hour in IST (0-23).
 // Must match pitCron.worker.js which opens windows at 8, 14, 19 IST.
 function currentISTHour() {
-  return new Date(Date.now() + IST_OFFSET_MS).getUTCHours();
+  return moment().tz('Asia/Kolkata').hour();
 }
 
 // Derives the current pit window key ('morning' | 'afternoon' | 'evening' | null)
@@ -43,9 +42,8 @@ function currentWindowKey() {
 
 // Returns today's date as 'YYYY-MM-DD' in IST.
 // Pit window keys are created by pitCron.worker.js using the IST date.
-// Using todayUTCString() here would produce a different date for 5.5h/day.
 function todayIST() {
-  return new Date(Date.now() + IST_OFFSET_MS).toISOString().slice(0, 10);
+  return moment().tz('Asia/Kolkata').format('YYYY-MM-DD');
 }
 
 router.post('/claim', async (req, res) => {
