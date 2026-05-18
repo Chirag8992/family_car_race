@@ -138,7 +138,7 @@ async function setupCronJobs() {
     GAME.JOB_NAMES.THURSDAY_GROUPING,
     {},
     {
-      repeat:       { pattern: '30 11 * * *', tz: 'Asia/Kolkata' },
+      repeat:       { pattern: '40 11 * * *', tz: 'Asia/Kolkata' },
       jobId:        'thursday-grouping-cron',
       updateData:   true,
     }
