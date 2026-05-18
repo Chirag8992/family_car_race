@@ -109,7 +109,7 @@ router.get('/record-overview', async (req, res) => {
       if (!dayGroupsRaw || !dayGroupsRaw.group_1) {
         // Groups not assigned for this day yet
         days.push({ dayNumber, status: 'pending', groups: [] });
-        continue;
+         continue; 
       }
 
       // Hide groups for future days — Day 2 groups should only be visible on Day 2+
@@ -165,9 +165,9 @@ router.get('/record-overview', async (req, res) => {
         // Get family info from cache + member counts from DB
         let familyInfoMap = {};
         if (familyIds.length > 0) {
-          const families = await cacheManager.getMultipleOrCache('family', familyIds);
+          const families = Object.values(await cacheManager.getMultipleOrCache('family', familyIds));
           const ownerIds = families.filter(f => f && f.userId).map(f => f.userId);
-          const owners = ownerIds.length > 0 ? await cacheManager.getMultipleOrCache('user', ownerIds) : [];
+          const owners = ownerIds.length > 0 ? Object.values(await cacheManager.getMultipleOrCache('user', ownerIds)) : [];
           const ownerMap = {};
           for (const o of owners) { if (o) ownerMap[String(o.user_id)] = o; }
 

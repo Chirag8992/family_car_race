@@ -241,12 +241,14 @@ async function getWeekLeaderboard(db, weekStart, weekEnd) {
 
     // Enrich with family + owner info from cache
     const familyIds = rows.map(r => r.familyId);
-    const families = familyIds.length > 0 ? await cacheManager.getMultipleOrCache('family', familyIds) : [];
+    const familiesObj = familyIds.length > 0 ? await cacheManager.getMultipleOrCache('family', familyIds) : {};
+    const families = Object.values(familiesObj);
     const familyMap = {};
     for (const f of families) { if (f) familyMap[String(f.id)] = f; }
 
     const ownerIds = families.filter(f => f && f.userId).map(f => f.userId);
-    const owners = ownerIds.length > 0 ? await cacheManager.getMultipleOrCache('user', ownerIds) : [];
+    const ownersObj = ownerIds.length > 0 ? await cacheManager.getMultipleOrCache('user', ownerIds) : {};
+    const owners = Object.values(ownersObj);
     const ownerMap = {};
     for (const o of owners) { if (o) ownerMap[String(o.user_id)] = o; }
 
@@ -283,9 +285,11 @@ async function getWeekLeaderboard(db, weekStart, weekEnd) {
       );
 
       const fillFamilyIds = fillRows.map(r => r.familyId);
-      const fillFamilies = fillFamilyIds.length > 0 ? await cacheManager.getMultipleOrCache('family', fillFamilyIds) : [];
+      const fillFamiliesObj = fillFamilyIds.length > 0 ? await cacheManager.getMultipleOrCache('family', fillFamilyIds) : {};
+      const fillFamilies = Object.values(fillFamiliesObj);
       const fillOwnerIds = fillFamilies.filter(f => f && f.userId).map(f => f.userId);
-      const fillOwners = fillOwnerIds.length > 0 ? await cacheManager.getMultipleOrCache('user', fillOwnerIds) : [];
+      const fillOwnersObj = fillOwnerIds.length > 0 ? await cacheManager.getMultipleOrCache('user', fillOwnerIds) : {};
+      const fillOwners = Object.values(fillOwnersObj);
       const fillOwnerMap = {};
       for (const o of fillOwners) { if (o) fillOwnerMap[String(o.user_id)] = o; }
 

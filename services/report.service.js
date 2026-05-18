@@ -52,9 +52,9 @@ async function getPitMemberList(redis, db, raceId, dayNumber, groupNumber, famil
   const memberIds = members.map(m => String(m.userId));
 
   // Fetch user info from cache
-  const users = await cacheManager.getMultipleOrCache('user', memberIds);
+  const users = Object.values(await cacheManager.getMultipleOrCache('user', memberIds));
 
-  const memberIds = members.map(m => String(m.userId));
+  // const memberIds = members.map(m => String(m.userId));
 
   // 2. Who has visited (joined socket room) — connected_members is a Set
   const connectedKey = keys.connectedMembers(raceId, dayNumber, groupNumber);
@@ -147,7 +147,7 @@ async function getFamilyInventory(redis, db, raceId, dayNumber, groupNumber, fam
   const memberIds = members.map(m => String(m.userId));
 
   // Build name/image lookup from cache
-  const users = await cacheManager.getMultipleOrCache('user', memberIds);
+  const users = Object.values(await cacheManager.getMultipleOrCache('user', memberIds));
   const memberInfoMap = {};
   for (const u of users) {
     if (u) memberInfoMap[String(u.user_id)] = { name: u.username || '', image: u.image || '' };

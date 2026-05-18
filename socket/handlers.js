@@ -296,7 +296,7 @@ function attach(io) {
         let spectatorFamilyInfo = {};
         if (familiesRaw.length > 0) {
           try {
-            const families = await cacheManager.getMultipleOrCache('family', familiesRaw);
+            const families = Object.values(await cacheManager.getMultipleOrCache('family', familiesRaw));
             const memberCountRows = await db.query(
               `SELECT familyId, COUNT(*) AS cnt FROM groupsmembers WHERE familyId IN (${familiesRaw.map(() => '?').join(',')}) AND memberStatus = '1' GROUP BY familyId`,
               familiesRaw
@@ -422,7 +422,7 @@ async function buildJoinSnapshot(redis, raceId, dayNumber, groupNumber, memberId
   let familyInfoMap = {};
   if (familiesRaw.length > 0) {
     try {
-      const families = await cacheManager.getMultipleOrCache('family', familiesRaw);
+      const families = Object.values(await cacheManager.getMultipleOrCache('family', familiesRaw));
       const memberCountRows = await db.query(
         `SELECT familyId, COUNT(*) AS cnt FROM groupsmembers WHERE familyId IN (${familiesRaw.map(() => '?').join(',')}) AND memberStatus = '1' GROUP BY familyId`,
         familiesRaw
