@@ -261,7 +261,7 @@ router.get('/week-leaderboard', async (req, res) => {
   try {
     // Find the latest game to get its date range and status
     const [game] = await db.query(
-      `SELECT race_week_start, race_start_day, status FROM family_car_race_schedule
+      `SELECT race_week_start, race_start_day, race_start_time, status FROM family_car_race_schedule
        ORDER BY created_at DESC LIMIT 1`
     );
 
@@ -283,7 +283,11 @@ router.get('/week-leaderboard', async (req, res) => {
 
     const topFamilies = await gameCtx.getWeekLeaderboard(db, weekStart, weekEnd);
 
-    return res.json({ weekStart, weekEnd, frozen, qualifyLimit, topFamilies });
+    // Include race start info for countdown timer
+    const raceStartDay = game ? game.race_start_day : null;
+    const raceStartTime = game ? game.race_start_time : null;
+
+    return res.json({ weekStart, weekEnd, frozen, qualifyLimit, topFamilies, raceStartDay, raceStartTime });
   } catch (err) {
     console.error('[GET /game/week-leaderboard]', err.message);
     return res.status(500).json({ error: 'internal_error', message: err.message });
