@@ -127,7 +127,7 @@ async function setupCronJobs() {
     GAME.JOB_NAMES.PIT_WINDOW_OPEN,
     {},
     {
-      repeat:       { pattern: '45 8,15,19 * * *', tz: 'Asia/Kolkata' },
+      repeat:       { pattern: '45 11,13,19* * *', tz: 'Asia/Kolkata' },
       jobId:        'pit-window-cron',
       updateData:   true,
     }
@@ -138,7 +138,7 @@ async function setupCronJobs() {
     GAME.JOB_NAMES.THURSDAY_GROUPING,
     {},
     {
-      repeat:       { pattern: '57 18 * * *', tz: 'Asia/Kolkata' },
+      repeat:       { pattern: '30 11 * * *', tz: 'Asia/Kolkata' },
       jobId:        'thursday-grouping-cron',
       updateData:   true,
     }
