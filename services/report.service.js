@@ -16,8 +16,9 @@
  *     also sorted descending by total_actions.
  */
 
-const keys = require('../utils/keys');
-const GAME  = require('../constants/game');
+const keys         = require('../utils/keys');
+const GAME         = require('../constants/game');
+const cacheManager = require('../utils/Cache_manager');
 
 // ─── Requirement 1 ────────────────────────────────────────────────────────────
 
@@ -41,15 +42,17 @@ const GAME  = require('../constants/game');
  * @returns {Promise<Array>}
  */
 async function getPitMemberList(redis, db, raceId, dayNumber, groupNumber, familyId, date) {
-  // 1. All members of this family from MySQL — JOIN users for name + image
+  // 1. All members of this family from MySQL
   const members = await db.query(
-    `SELECT gm.userId, gm.memberStatus, u.username, u.name, u.image
-       FROM groupsmembers gm
-       LEFT JOIN users u ON u.id = gm.userId
-      WHERE gm.familyId = ?`,
+    `SELECT userId, memberStatus FROM groupsmembers WHERE familyId = ?`,
     [familyId]
   );
   if (!members.length) return [];
+
+  const memberIds = members.map(m => String(m.userId));
+
+  // Fetch user info from cache
+  const users = await cacheManager.getMultipleOrCache('user', memberIds);
 
   const memberIds = members.map(m => String(m.userId));
 
@@ -81,13 +84,14 @@ async function getPitMemberList(redis, db, raceId, dayNumber, groupNumber, famil
 
   // 5. Build response — include only members with claims OR who visited
   const memberInfoMap = {};
-  members.forEach(m => {
-    memberInfoMap[String(m.userId)] = {
-      memberStatus: m.memberStatus,
-      name:         m.username || m.name || '',
-      image:        m.image || '',
-    };
-  });
+  for (const u of users) {
+    if (u) {
+      memberInfoMap[String(u.user_id)] = {
+        name:  u.username || '',
+        image: u.image || '',
+      };
+    }
+  }
 
   const list = [];
   for (const memberId of memberIds) {
@@ -133,23 +137,21 @@ async function getPitMemberList(redis, db, raceId, dayNumber, groupNumber, famil
  * @returns {Promise<Array>}
  */
 async function getFamilyInventory(redis, db, raceId, dayNumber, groupNumber, familyId) {
-  // 1. All members of this family — include name + image via JOIN
+  // 1. All members of this family
   const members = await db.query(
-    `SELECT gm.userId, gm.memberStatus, u.username, u.name, u.image
-       FROM groupsmembers gm
-       LEFT JOIN users u ON u.id = gm.userId
-      WHERE gm.familyId = ?`,
+    `SELECT userId, memberStatus FROM groupsmembers WHERE familyId = ?`,
     [familyId]
   );
   if (!members.length) return [];
 
   const memberIds = members.map(m => String(m.userId));
 
-  // Build name/image lookup
+  // Build name/image lookup from cache
+  const users = await cacheManager.getMultipleOrCache('user', memberIds);
   const memberInfoMap = {};
-  members.forEach(m => {
-    memberInfoMap[String(m.userId)] = { name: m.username || m.name || '', image: m.image || '' };
-  });
+  for (const u of users) {
+    if (u) memberInfoMap[String(u.user_id)] = { name: u.username || '', image: u.image || '' };
+  }
 
   // 2. Who is currently connected to the socket room (live online status)
   const connectedKey = keys.connectedMembers(raceId, dayNumber, groupNumber);

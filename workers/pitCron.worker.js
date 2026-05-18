@@ -18,16 +18,16 @@ const { redisClient } = require('../config/redis');
 const db          = require('../config/mysql');
 const ioSingleton = require('../socket/io');
 const keys        = require('../utils/keys');
+const moment      = require('moment-timezone');
 
 const connection = { host: env.REDIS_PARTYROOM_URL, port: env.REDIS_PORT };
 
 /**
- * Returns the current hour in IST (UTC+05:30).
+ * Returns the current hour in IST (Asia/Kolkata).
  * Fix #15: use IST for pit window resolution to match the IST-based cron schedule.
  */
 function currentISTHour() {
-  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // +05:30
-  return new Date(Date.now() + IST_OFFSET_MS).getUTCHours();
+  return moment().tz('Asia/Kolkata').hour();
 }
 
 /**
@@ -69,8 +69,7 @@ const worker = new Worker(
     }
 
     // today as a YYYY-MM-DD string � using IST date to match race schedule dates
-    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-    const todayIST = new Date(Date.now() + IST_OFFSET_MS).toISOString().slice(0, 10);
+    const todayIST = moment().tz('Asia/Kolkata').format('YYYY-MM-DD');
 
     const games = await db.query(
       `SELECT id, race_start_day FROM family_car_race_schedule

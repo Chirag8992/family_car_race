@@ -21,6 +21,7 @@ const env        = require('../config/env');
 const GAME       = require('../constants/game');
 const keys       = require('../utils/keys');
 const helpers    = require('../utils/helpers');
+const moment     = require('moment-timezone');
 const { removeTickJob } = require('../jobs/queue');
 const gameService   = require('../services/game.service');
 const raceService   = require('../services/race.service');
@@ -162,13 +163,11 @@ async function cleanupGroupRaceKeys(redis, raceId, dayNumber, groupNumber, famil
   for (const m of connectedNow) allMemberIds.add(m);
 
   // Compute seconds until midnight IST so race data stays visible until then
-  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-  const nowIST = new Date(Date.now() + IST_OFFSET_MS);
-  const midnightIST = new Date(nowIST);
-  midnightIST.setUTCHours(24, 0, 0, 0); // next midnight in IST-as-UTC
+  const nowIST = moment().tz('Asia/Kolkata');
+  const midnightIST = nowIST.clone().endOf('day');
   const ttlUntilMidnight = Math.max(
     300, // minimum 5 min to avoid instant deletion
-    Math.floor((midnightIST.getTime() - nowIST.getTime()) / 1000)
+    midnightIST.diff(nowIST, 'seconds')
   );
 
   const pipeline = redis.pipeline();
