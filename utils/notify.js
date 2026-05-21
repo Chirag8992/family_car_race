@@ -19,7 +19,7 @@ const SENDER_IMAGE = 'https://rockstat-bucket.s3.ap-south-1.amazonaws.com/users_
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ─── WebView URL ────────────────────────────────────────────────────────────
-const WEBVIEW_BASE   = 'https://preview--family-clash-dash.lovable.app';
+const WEBVIEW_BASE   = 'https://family-clash-dash.lovable.app';
 const APP_ENV        = env.isProduction ? 'production' : 'development';
 const WEBVIEW_URL    = `${WEBVIEW_BASE}/${APP_ENV}`;
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,6 +28,24 @@ const WEBVIEW_URL    = `${WEBVIEW_BASE}/${APP_ENV}`;
 const MESSAGES = {
   GAME_START: '🏁 Family Car Race is starting in 5 minutes! Tap to join the race!',
   PIT_WINDOW: '⛽ Pit Stop window is now OPEN! Tap to boost your family car.',
+};
+
+// Event card config per message type (used in EVENTTEXTMESSAGE other_details)
+const EVENT_CONFIG = {
+  GAME_START: {
+    headerText: '🏁 Family Car Race',
+    textMessage: 'Race is starting in 5 minutes! Join now to compete with your family.',
+    urlText: 'Join Race >',
+    image: 'https://rockstat-bucket.s3.ap-south-1.amazonaws.com/rockstar-leaderboard/badges/1.webp',
+    footerText: 'Good luck to your family! 🚗💨',
+  },
+  PIT_WINDOW: {
+    headerText: '⛽ Pit Stop Open',
+    textMessage: 'Pit Stop window is OPEN! Claim your boost to speed up your family car.',
+    urlText: 'Boost Now >',
+    image: 'https://rockstat-bucket.s3.ap-south-1.amazonaws.com/rockstar-leaderboard/badges/2.webp',
+    footerText: 'Pit window closes soon — claim before it expires!',
+  },
 };
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -65,6 +83,27 @@ async function insertTextMessage(chatId, senderId, text) {
        (text, sender_id, chat_id, media, msg_type, deleted_for_user, other_details, created_at, updated_at)
      VALUES (?, ?, ?, '', 'TEXT', '[]', NULL, NOW(), NOW())`,
     [text, senderId, chatId]
+  );
+
+  await db.query(
+    `UPDATE chat SET last_message_id = ?, last_message_at = NOW() WHERE id = ?`,
+    [result.insertId, chatId]
+  );
+
+  return result.insertId;
+}
+
+/**
+ * Insert an EVENTTEXTMESSAGE into a chat.
+ * The event JSON is stored in the other_details column; Android renders it as a card with button.
+ */
+async function insertEventMessage(chatId, senderId, text, eventJson) {
+  const otherDetails = JSON.stringify(eventJson);
+  const result = await db.query(
+    `INSERT INTO chat_message
+       (text, sender_id, chat_id, media, msg_type, deleted_for_user, other_details, created_at, updated_at)
+     VALUES (?, ?, ?, '', 'EVENTTEXTMESSAGE', '[]', ?, NOW(), NOW())`,
+    [text, senderId, chatId, otherDetails]
   );
 
   await db.query(
@@ -149,27 +188,41 @@ async function getActiveFamilyMembers(familyId) {
 }
 
 /**
- * Send TEXT message + push notification to every active member of a family.
- * Each member gets a personalized WebView URL appended to the message.
+ * Send EVENTTEXTMESSAGE + push notification to every active member of a family.
  *
  * @param {number|string} familyId
- * @param {string} messageText - The text message to send
+ * @param {string} messageType - Key from EVENT_CONFIG (e.g., 'GAME_START', 'PIT_WINDOW')
  */
-async function notifyFamilyMembers(familyId, messageText) {
+async function notifyFamilyMembers(familyId, messageType) {
   try {
     const memberIds = await getActiveFamilyMembers(familyId);
     if (memberIds.length === 0) return;
+
+    const eventCfg = EVENT_CONFIG[messageType];
+    const pushText = MESSAGES[messageType] || messageType;
 
     for (const memberId of memberIds) {
       try {
         // Skip sending to the sender itself
         if (Number(memberId) === SENDER_ID) continue;
 
-        const fullMessage = `${messageText}\n\n👉 ${WEBVIEW_URL}`;
+        // Build event card JSON for other_details
+        const eventJson = {
+          headerText: eventCfg ? eventCfg.headerText : 'Family Car Race',
+          eventList: [
+            {
+              textMessage: eventCfg ? eventCfg.textMessage : pushText,
+              urlText: eventCfg ? eventCfg.urlText : 'Open ',
+              baseUrl: WEBVIEW_URL,
+              image: eventCfg ? eventCfg.image : '',
+            },
+          ],
+          footerText: eventCfg ? eventCfg.footerText : '',
+        };
 
         const chatId = await getOrCreateSingleChat(SENDER_ID, memberId);
-        await insertTextMessage(chatId, SENDER_ID, fullMessage);
-        await sendPushNotification(memberId, 'Family Car Race', messageText, chatId);
+        await insertEventMessage(chatId, SENDER_ID, pushText, eventJson);
+        await sendPushNotification(memberId, 'Family Car Race', pushText, chatId);
       } catch (err) {
         console.error(`[notify] Failed for member ${memberId} in family ${familyId}:`, err.message);
       }
@@ -182,14 +235,14 @@ async function notifyFamilyMembers(familyId, messageText) {
 }
 
 /**
- * Notify all families (send TEXT + push to every member of each family).
+ * Notify all families (send EVENTTEXTMESSAGE + push to every member of each family).
  *
  * @param {Array<number|string>} familyIds
- * @param {string} messageText
+ * @param {string} messageType - Key from EVENT_CONFIG (e.g., 'GAME_START', 'PIT_WINDOW')
  */
-async function notifyAllFamilies(familyIds, messageText) {
+async function notifyAllFamilies(familyIds, messageType) {
   for (const familyId of familyIds) {
-    await notifyFamilyMembers(familyId, messageText);
+    await notifyFamilyMembers(familyId, messageType);
   }
   console.log(`[notify] Finished notifying ${familyIds.length} families`);
 }
@@ -199,8 +252,10 @@ module.exports = {
   notifyAllFamilies,
   getOrCreateSingleChat,
   insertTextMessage,
+  insertEventMessage,
   sendPushNotification,
   getActiveFamilyMembers,
   MESSAGES,
+  EVENT_CONFIG,
   SENDER_ID,
 };

@@ -32,7 +32,7 @@ const crystalService  = require('../services/crystal.service');
 const gameService     = require('../services/game.service');
 const { enqueueRaceJobs } = require('../jobs/queue');
 const ioSingleton     = require('../socket/io');
-const { notifyAllFamilies, MESSAGES } = require('../utils/notify');
+const { notifyAllFamilies } = require('../utils/notify');
 
 /**
  * Fired when a game start trigger key expires.
@@ -169,7 +169,7 @@ async function onNotifyTrigger({ raceId, dayNumber }) {
     .filter(k => k.startsWith('group_'))
     .flatMap(k => JSON.parse(groupsRaw[k]));
 
-  await notifyAllFamilies(allFamilies, MESSAGES.GAME_START);
+  await notifyAllFamilies(allFamilies, 'GAME_START');
 }
 
 module.exports = { onStartTrigger, onNotifyTrigger };
