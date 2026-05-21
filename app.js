@@ -28,6 +28,7 @@ const raceRoutes        = require('./routes/race.routes');
 const pitRoutes         = require('./routes/pit.routes');
 // const leaderboardRoutes = require('./routes/leaderboard.routes');
 const gameRoutes        = require('./routes/game.routes');
+const rewardRoutes      = require('./routes/reward.routes');
 
 const db             = require('./config/mysql');
 const cacheManager   = require('./utils/Cache_manager');
@@ -131,6 +132,7 @@ function createApp(redisClient) {
   app.use(`${PREFIX}/admin`,       authenticate, admin, adminRoutes);
   app.use(`${PREFIX}/race`,        authenticate, participant(redisClient), raceRoutes);
   app.use(`${PREFIX}/pit`,         authenticate, participant(redisClient), pitRoutes);
+  app.use(`${PREFIX}/reward`,      authenticate, rewardRoutes);
   // app.use(`${PREFIX}/leaderboard`, authenticate, leaderboardRoutes);
 
   // ── GET /user/profile — returns current user's name, image, family info ──

@@ -78,7 +78,7 @@ async function createGame(body, db, redis) {
     current_day:     '0',
   });
 
-  // 3 TTL trigger keys
+  // 3 TTL trigger keys + notification triggers (5 min before)
   const dayDates = [day1_date, day2_date, day3_date];
   for (let i = 0; i < 3; i++) {
     const dayNumber = i + 1;
@@ -86,6 +86,13 @@ async function createGame(body, db, redis) {
     if (ttl > 0) {
       await redis.set(keys.gameStartTrigger(raceId, dayNumber), '1', 'EX', ttl);
       console.log(`[game] Trigger key set: day${dayNumber} TTL=${ttl}s`);
+
+      // Set notify trigger 5 min (300s) before game start
+      const notifyTtl = ttl - 300;
+      if (notifyTtl > 0) {
+        await redis.set(keys.gameNotifyTrigger(raceId, dayNumber), '1', 'EX', notifyTtl);
+        console.log(`[game] Notify trigger set: day${dayNumber} TTL=${notifyTtl}s (5min before start)`);
+      }
     } else {
       console.warn(`[game] Day ${dayNumber} start time already passed — trigger not set`);
     }

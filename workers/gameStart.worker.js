@@ -32,6 +32,7 @@ const crystalService  = require('../services/crystal.service');
 const gameService     = require('../services/game.service');
 const { enqueueRaceJobs } = require('../jobs/queue');
 const ioSingleton     = require('../socket/io');
+const { notifyAllFamilies, MESSAGES } = require('../utils/notify');
 
 /**
  * Fired when a game start trigger key expires.
@@ -147,4 +148,28 @@ async function onStartTrigger({ raceId, dayNumber }) {
   console.log(`[gameStart] All 3 groups started for ${raceId} day${dayNumber}`);
 }
 
-module.exports = { onStartTrigger };
+/**
+ * Fired when a notify trigger key expires (5 min before game start).
+ * Sends TEXT + push notification to all members of participating families.
+ * @param {{ raceId: string, dayNumber: number }} param
+ */
+async function onNotifyTrigger({ raceId, dayNumber }) {
+  console.log(`[gameStart] Notify trigger fired: ${raceId} day${dayNumber}`);
+
+  const redis = redisClient;
+
+  // Read group assignments for this day
+  const groupsRaw = await redis.hgetall(keys.dayGroups(raceId, dayNumber));
+  if (!groupsRaw || !groupsRaw.group_1) {
+    console.error(`[gameStart] No groups found for notify: ${raceId} day${dayNumber}`);
+    return;
+  }
+
+  const allFamilies = Object.keys(groupsRaw)
+    .filter(k => k.startsWith('group_'))
+    .flatMap(k => JSON.parse(groupsRaw[k]));
+
+  await notifyAllFamilies(allFamilies, MESSAGES.GAME_START);
+}
+
+module.exports = { onStartTrigger, onNotifyTrigger };

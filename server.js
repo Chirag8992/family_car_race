@@ -69,7 +69,20 @@ async function start() {
       return;
     }
 
-    // ── Pattern 2: Crystal cooldown expiry ───────────────────────────
+    // ── Pattern 2: Notify trigger (5 min before game start) ──────────────
+    // game:{raceId}:day:{dayNumber}:notify_trigger
+    const notifyTrigger = helpers.parseNotifyTriggerKey(key);
+    if (notifyTrigger) {
+      const { onNotifyTrigger } = require('./workers/gameStart.worker');
+      if (typeof onNotifyTrigger === 'function') {
+        onNotifyTrigger(notifyTrigger).catch((err) => {
+          console.error('[server] gameStart.onNotifyTrigger failed:', err.message);
+        });
+      }
+      return;
+    }
+
+    // ── Pattern 3: Crystal cooldown expiry ───────────────────────────────
     // race:{raceId}:day:{dayNumber}:group:{groupNumber}:member:{memberId}:crystal_cooldown
     const cooldown = helpers.parseCrystalCooldownKey(key);
     if (cooldown) {

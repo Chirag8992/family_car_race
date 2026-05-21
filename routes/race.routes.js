@@ -188,6 +188,7 @@ router.post('/egg/throw', async (req, res) => {
         attackerFamilyId: familyId,
         attackerName,
         attackerImage,
+        amount,
       });
     }
 

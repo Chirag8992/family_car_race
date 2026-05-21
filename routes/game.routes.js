@@ -18,7 +18,7 @@ const db         = require('../config/mysql');
 const { redisClient: redis } = require('../config/redis');
 const cacheManager = require('../utils/Cache_manager');
 const moment     = require('moment-timezone');
-
+const GAME       = require('../constants/game');
 const gameCtx    = require('../services/game-context.service');
 const lbService  = require('../services/leaderboard.service');
 const keysUtil   = require('../utils/keys');

@@ -19,6 +19,7 @@ const db          = require('../config/mysql');
 const ioSingleton = require('../socket/io');
 const keys        = require('../utils/keys');
 const moment      = require('moment-timezone');
+const { notifyAllFamilies, MESSAGES } = require('../utils/notify');
 
 const connection = { host: env.REDIS_PARTYROOM_URL, port: env.REDIS_PORT };
 
@@ -113,6 +114,19 @@ const worker = new Worker(
               closes_at: closesAt,
             });
           }
+        }
+      }
+
+      // Notify all families participating today
+      const groupsHash = await redis.hgetall(keys.dayGroups(raceId, dayNumber));
+      if (groupsHash) {
+        const allFamilies = Object.keys(groupsHash)
+          .filter(k => k.startsWith('group_'))
+          .flatMap(k => JSON.parse(groupsHash[k]));
+
+        if (allFamilies.length > 0) {
+          notifyAllFamilies(allFamilies, MESSAGES.PIT_WINDOW)
+            .catch(err => console.error('[pitCron] Notify error:', err.message));
         }
       }
 

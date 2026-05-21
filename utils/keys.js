@@ -28,6 +28,13 @@ const keys = {
     `game:${raceId}:day:${dayNumber}:start_trigger`,
 
   /**
+   * Notification trigger key (expires 5 min before game start).
+   * When this key expires → send notifications to all participating families.
+   */
+  gameNotifyTrigger: (raceId, dayNumber) =>
+    `game:${raceId}:day:${dayNumber}:notify_trigger`,
+
+  /**
    * Game configuration hash (mirrors family_car_race_schedule MySQL row).
    * Written at game creation. Read by workers instead of MySQL.
    */

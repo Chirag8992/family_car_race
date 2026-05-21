@@ -192,6 +192,19 @@ function isoWeekday(dateStr) {
   return moment(dateStr, 'YYYY-MM-DD').isoWeekday(); // Mon=1...Sun=7
 }
 
+/**
+ * Parses a raceId and dayNumber out of a notify trigger key.
+ * Key format: game:{raceId}:day:{dayNumber}:notify_trigger
+ *
+ * @param {string} key
+ * @returns {{ raceId: string, dayNumber: number }|null}
+ */
+function parseNotifyTriggerKey(key) {
+  const match = key.match(/^game:(.+):day:(\d+):notify_trigger$/);
+  if (!match) return null;
+  return { raceId: match[1], dayNumber: parseInt(match[2], 10) };
+}
+
 module.exports = {
   generateUUID,
   getTodayDate: todayUTCString,
@@ -201,6 +214,7 @@ module.exports = {
   secondsUntil,
   parseStartTriggerKey,
   parseCrystalCooldownKey,
+  parseNotifyTriggerKey,
   tickJobId,
   roomName,
   pitWindowKeyFromHour,

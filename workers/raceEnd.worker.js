@@ -186,7 +186,8 @@ async function cleanupGroupRaceKeys(redis, raceId, dayNumber, groupNumber, famil
     pipeline.del(keys.familyFueled(raceId, dayNumber, groupNumber, familyId, 1));
     pipeline.del(keys.familyFueled(raceId, dayNumber, groupNumber, familyId, 2));
     pipeline.del(keys.familyRestartFueled(raceId, dayNumber, groupNumber, familyId));
-    pipeline.del(keys.activeMembers(raceId, dayNumber, groupNumber, familyId));
+    // Keep activeMembers for 7 days so reward claims can identify contributors
+    pipeline.expire(keys.activeMembers(raceId, dayNumber, groupNumber, familyId), 7 * 86400);
   }
 
   // Member-level keys — deleted here for every member who participated
