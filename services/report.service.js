@@ -158,8 +158,8 @@ async function getFamilyInventory(redis, db, raceId, dayNumber, groupNumber, fam
   const connectedSet = new Set(await redis.smembers(connectedKey));
 
   // Also check activeMembers for fallback (has done any action this session)
-  const activeMembersKey = keys.activeMembers(raceId, dayNumber, groupNumber, familyId);
-  const activeSet = new Set(await redis.smembers(activeMembersKey));
+  // const activeMembersKey = keys.activeMembers(raceId, dayNumber, groupNumber, familyId);
+  // const activeSet = new Set(await redis.smembers(activeMembersKey));
 
   // 3. Fetch inventory for all members via pipeline
   const pipeline = redis.pipeline();
@@ -180,7 +180,7 @@ async function getFamilyInventory(redis, db, raceId, dayNumber, groupNumber, fam
     const eggs_used   = err ? 0 : parseInt(fields[0] || '0', 10);
     const wipers_used = err ? 0 : parseInt(fields[1] || '0', 10);
     const total_actions = eggs_used + wipers_used;
-    const is_active   = connectedSet.has(memberId) || activeSet.has(memberId);
+    const is_active   = connectedSet.has(memberId);
     const info = memberInfoMap[memberId] || {};
 
     const entry = {

@@ -151,7 +151,7 @@ function attach(io) {
 
         // ── 5. Track connections + activity ────────────────────────────
         await redis.sadd(keys.connectedMembers(raceId, dayNumber, groupNumber), memberId);
-        await redis.sadd(keys.activeMembers(raceId, dayNumber, groupNumber, familyId), memberId);
+        // await redis.sadd(keys.activeMembers(raceId, dayNumber, groupNumber, familyId), memberId);
 
         memberContext = {
           memberId,

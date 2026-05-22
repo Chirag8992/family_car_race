@@ -81,6 +81,14 @@ router.post('/claim', async (req, res) => {
       memberId, familyId, windowKey, groupNumber ? parseInt(groupNumber, 10) : null
     );
 
+    // Mark as active contributor for reward eligibility
+    if (groupNumber) {
+      await redisClient.sadd(
+        keys.activeMembers(raceId, parseInt(dayNumber, 10), parseInt(groupNumber, 10), familyId),
+        String(memberId)
+      );
+    }
+    
     // Broadcast updated family boost to all users in the group room (realtime)
     const io = ioSingleton.get();
     if (io && groupNumber) {
