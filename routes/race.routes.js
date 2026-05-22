@@ -181,8 +181,7 @@ router.post('/egg/throw', async (req, res) => {
       let attackerImage = '';
       try {
         const userData = await cacheManager.getOrCache('user', memberId);
-        if (userData) { attackerName = userData.username || ''; attackerImage = userData.image || ''; }
-      } catch (_) {}
+        if (userData) { attackerName = userData.username || userData.name || ''; attackerImage = userData.image || ''; }      } catch (_) {}
       io.to(room).emit('egg_hit', {
         targetFamilyId,
         new_speed: newSpeed,
@@ -232,7 +231,7 @@ router.post('/wiper/use', async (req, res) => {
       let memberImage = '';
       try {
         const userData = await cacheManager.getOrCache('user', memberId);
-        if (userData) { memberName = userData.username || ''; memberImage = userData.image || ''; }
+        if (userData) { memberName = userData.username || userData.name || ''; memberImage = userData.image || ''; }
       } catch (_) {}
       io.to(room).emit('wiper_used', { familyId, new_speed: newSpeed, memberName, memberImage, amount });
     }

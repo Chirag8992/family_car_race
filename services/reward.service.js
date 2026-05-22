@@ -64,14 +64,16 @@ async function getRewardStatus(raceId, familyId, memberId) {
   // 4. Fetch reward details per claim_type with item info from frames/entry_effect/livegift
   const rewardQuery = `
     SELECT r.claim_type, r.reward_type, r.type_id, r.count, r.expiry_days,
-           f.title AS frame_title, f.image AS frame_image, f.isAnimated AS frame_animated, f.thumbnail AS frame_thumbnail,
-           e.title AS effect_title, e.thumbnail AS effect_thumbnail, e.videoPath AS effect_video,
-           lg.title AS gift_title, lg.image AS gift_image, lg.coins AS gift_coins
-      FROM family_car_race_reward r
-      LEFT JOIN frames f ON r.reward_type = 'frame' AND f.id = r.type_id
-      LEFT JOIN entry_effect e ON r.reward_type = 'entry_effect' AND e.id = r.type_id
-      LEFT JOIN livegift lg ON r.reward_type = 'baggage' AND lg.id = r.type_id
-     ORDER BY r.id ASC`;
+       f.title AS frame_title, f.image AS frame_image, f.isAnimated AS frame_animated, f.thumbnail AS frame_thumbnail,
+       e.title AS effect_title, e.thumbnail AS effect_thumbnail, e.videoPath AS effect_video,
+       lg.title AS gift_title, lg.image AS gift_image, lg.coins AS gift_coins, lg.videoPath AS gift_video,
+       prlg.title AS pr_title, prlg.image AS pr_image, prlg.videoPath AS pr_video
+    FROM family_car_race_reward r
+    LEFT JOIN frames f ON r.reward_type = 'frame' AND f.id = r.type_id
+    LEFT JOIN entry_effect e ON r.reward_type = 'entry_effect' AND e.id = r.type_id
+    LEFT JOIN livegift lg ON r.reward_type = 'baggage' AND lg.id = r.type_id
+    LEFT JOIN livegift prlg ON r.reward_type = 'partyroom_exp' AND prlg.id = r.type_id
+  ORDER BY r.id ASC`;
 
   const allRewards = await db.query(rewardQuery);
 
@@ -121,8 +123,11 @@ function formatRewards(rows) {
       base.title = r.gift_title || 'Gift';
       base.image = r.gift_image || '';
       base.coins = r.gift_coins || 0;
+      base.videoPath = r.gift_video || '';
     } else if (r.reward_type === 'partyroom_exp') {
-      base.title = 'Party Room EXP';
+      base.title = r.pr_title || 'Party Room EXP';
+      base.image = r.pr_image || '';
+      base.videoPath = r.pr_video || '';
       base.value = r.count;
     } else if (r.reward_type === 'family_exp') {
       base.title = 'Family EXP';
