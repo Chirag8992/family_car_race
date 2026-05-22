@@ -25,6 +25,7 @@ const moment     = require('moment-timezone');
 const { removeTickJob } = require('../jobs/queue');
 const gameService   = require('../services/game.service');
 const raceService   = require('../services/race.service');
+const rewardService = require('../services/reward.service');
 const { redisClient } = require('../config/redis');
 const db            = require('../config/mysql');
 const ioSingleton   = require('../socket/io');
@@ -101,18 +102,31 @@ const worker = new Worker(
       );
     }
 
-    // 5. Broadcast race_finished for this group's room
+    // 5. Award family EXP to the winning family (rank 1) — once per day per family
+    const winner = leaderboard.find(e => e.rank === 1);
+    if (winner) {
+      const dayExpRows = await db.query(
+        `SELECT count FROM family_car_race_reward WHERE claim_type = ? AND reward_type = 'family_exp'`,
+        [`day${dayNumber}`]
+      );
+      if (dayExpRows.length && dayExpRows[0].count > 0) {
+        await rewardService.addFamilyExp(null, winner.familyId, dayExpRows[0].count);
+        console.log(`[raceEnd] Awarded ${dayExpRows[0].count} family EXP to family ${winner.familyId} for day${dayNumber}`);
+      }
+    }
+
+    // 6. Broadcast race_finished for this group's room
     if (io) {
       io.to(room).emit('race_finished', { leaderboard });
     }
 
-    // 6. Cleanup Redis keys specific to this group race
+    // 7. Cleanup Redis keys specific to this group race
     await cleanupGroupRaceKeys(redis, raceId, dayNumber, groupNumber, families);
 
-    // 7. Remove this group from the active set
+    // 8. Remove this group from the active set
     await redis.srem(keys.activeDayGroups(raceId, dayNumber), String(groupNumber));
 
-    // 8. Check if ALL groups for this day are now done.
+    // 9. Check if ALL groups for this day are now done.
     //    Day-level work (status update, next-day grouping, game cleanup) only runs
     //    once — when the last group finishes. This prevents:
     //      - computeNextDayGroups running before all groups' DB rows are inserted
@@ -126,6 +140,26 @@ const worker = new Worker(
         console.log(`[raceEnd] Day ${dayNumber} complete — waiting for midnight cron to set day${dayNumber + 1} groups`);
       } else {
         // Day 3 — game is fully over
+
+        // Award streak family EXP to any family that won all 3 days
+        const streakWinners = await db.query(
+          `SELECT family_id FROM family_car_race_result
+           WHERE race_id = ? AND rank_position = 1
+           GROUP BY family_id HAVING COUNT(DISTINCT day_number) = 3`,
+          [raceId]
+        );
+        if (streakWinners.length) {
+          const streakExpRows = await db.query(
+            `SELECT count FROM family_car_race_reward WHERE claim_type = 'streak' AND reward_type = 'family_exp'`
+          );
+          if (streakExpRows.length && streakExpRows[0].count > 0) {
+            for (const row of streakWinners) {
+              await rewardService.addFamilyExp(null, row.family_id, streakExpRows[0].count);
+              console.log(`[raceEnd] Awarded ${streakExpRows[0].count} streak family EXP to family ${row.family_id}`);
+            }
+          }
+        }
+
         await cleanupGameKeys(redis, raceId);
         await gameService.updateGameStatus(raceId, 'completed', db, redis);
         console.log(`[raceEnd] Game ${raceId} completed and fully cleaned up`);

@@ -94,24 +94,6 @@ router.post('/crystal/collect', async (req, res) => {
   if (!await verifyMemberGroup(res, raceId, dayNumber, groupNumber, familyId)) return;
 
   try {
-    // Auto-init crystal_ready for members who never joined via Socket.IO
-    // or connected after the race started (missed gameStart worker init)
-    const hasCooldown = await redisClient.exists(
-      keys.crystalCooldown(raceId, dayNumber, groupNumber, memberId)
-    );
-    const hasReady = await redisClient.exists(
-      keys.crystalReady(raceId, dayNumber, groupNumber, memberId)
-    );
-    if (!hasCooldown && !hasReady) {
-      const alreadyHasInventory = await redisClient.hexists(
-        keys.memberInventory(raceId, dayNumber, groupNumber, memberId), 'crystals'
-      );
-      if (!alreadyHasInventory) {
-        await crystalService.initMemberInventory(redisClient, raceId, dayNumber, groupNumber, memberId);
-      }
-      await crystalService.setInitialCrystalReady(redisClient, raceId, dayNumber, groupNumber, memberId);
-    }
-
     const result = await crystalService.collectCrystal(
       redisClient, luaSHA, raceId, dayNumber, groupNumber, memberId
     );

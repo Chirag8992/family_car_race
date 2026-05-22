@@ -189,12 +189,6 @@ async function claimDailyReward(raceId, familyId, dayNumber, memberId) {
       await distributeReward(connection, memberId, reward.reward_type, reward.type_id, reward.count, reward.expiry_days);
     }
 
-    // Family EXP — applied once per member claim
-    const familyExpReward = rewards.find(r => r.reward_type === 'family_exp');
-    if (familyExpReward) {
-      await addFamilyExp(connection, familyId, familyExpReward.count);
-    }
-
     // Record the claim for this member
     const now = moment().tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
     await connection.query(
@@ -261,12 +255,6 @@ async function claimStreakReward(raceId, familyId, memberId) {
     for (const reward of rewards) {
       if (reward.reward_type === 'family_exp') continue;
       await distributeReward(connection, memberId, reward.reward_type, reward.type_id, reward.count, reward.expiry_days);
-    }
-
-    // Family EXP — once per member claim
-    const familyExpReward = rewards.find(r => r.reward_type === 'family_exp');
-    if (familyExpReward) {
-      await addFamilyExp(connection, familyId, familyExpReward.count);
     }
 
     // Record claim for this member
@@ -377,14 +365,16 @@ async function distributeReward(connection, userId, rewardType, typeId, count, e
  *   5. Clear Redis family cache
  */
 async function addFamilyExp(connection, familyId, expAmount) {
+  const conn = connection || db;
+
   // 1. Add exp
-  await connection.query(
+  await conn.query(
     `UPDATE \`groups\` SET exp = exp + ? WHERE id = ?`,
     [expAmount, familyId]
   );
 
   // 2. Get updated values
-  const [rows] = await connection.query(
+  const rows = await conn.query(
     `SELECT exp, familyLevel FROM \`groups\` WHERE id = ?`,
     [familyId]
   );
@@ -394,7 +384,7 @@ async function addFamilyExp(connection, familyId, expAmount) {
   const currentLevel = rows[0].familyLevel;
 
   // 3. Check level threshold from family_level_details
-  const [levelRows] = await connection.query(
+  const levelRows = await conn.query(
     `SELECT level FROM family_level_details WHERE exp_to <= ? ORDER BY level DESC LIMIT 1`,
     [currentExp]
   );
@@ -403,7 +393,7 @@ async function addFamilyExp(connection, familyId, expAmount) {
     const newLevel = levelRows[0].level + 1;
     // 4. Level up if exceeded current level (never levels down)
     if (newLevel > currentLevel) {
-      await connection.query(
+      await conn.query(
         `UPDATE \`groups\` SET familyLevel = ? WHERE id = ?`,
         [newLevel, familyId]
       );
@@ -414,4 +404,4 @@ async function addFamilyExp(connection, familyId, expAmount) {
   await redisClient.del(`family:${familyId}`);
 }
 
-module.exports = { getRewardStatus, claimDailyReward, claimStreakReward };
+module.exports = { getRewardStatus, claimDailyReward, claimStreakReward, addFamilyExp };
