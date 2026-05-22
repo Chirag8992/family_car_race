@@ -25,6 +25,12 @@ const handlers        = require('../socket/handlers');
 async function onCooldownExpired({ raceId, dayNumber, groupNumber, memberId }) {
   const redis = redisClient;
 
+  // Guard: if a new cooldown was already set (e.g. by a successful collect
+  // that happened in the gap), don't set crystal_ready — the new cooldown's
+  // expiry will handle it.
+  const cooldownExists = await redis.exists(keys.crystalCooldown(raceId, dayNumber, groupNumber, memberId));
+  if (cooldownExists) return;
+
   // Re-enable collect button
   await redis.set(keys.crystalReady(raceId, dayNumber, groupNumber, memberId), '1');
 

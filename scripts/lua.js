@@ -24,7 +24,6 @@ const SCRIPTS = {
   /**
    * crystalCollect
    * Atomically collects 1 crystal for a member.
-   * Handles first-time init (neither cooldown nor ready exists) by setting cooldown.
    * KEYS[1] = crystal_cooldown, KEYS[2] = crystal_ready, KEYS[3] = inventory hash
    */
   crystalCollect: `
@@ -32,12 +31,6 @@ const SCRIPTS = {
       return redis.error_reply('cooldown_active')
     end
     if redis.call('EXISTS', KEYS[2]) == 0 then
-      -- Neither cooldown nor ready exists: first-time init
-      -- Set cooldown; keyspace expiry event will set crystal_ready after 30s
-      redis.call('SET', KEYS[1], '1', 'EX', 30)
-      if redis.call('EXISTS', KEYS[3]) == 0 then
-        redis.call('HSET', KEYS[3], 'crystals', '0')
-      end
       return redis.error_reply('not_ready')
     end
     redis.call('DEL', KEYS[2])
