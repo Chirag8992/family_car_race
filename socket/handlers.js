@@ -46,33 +46,24 @@ async function broadcastActiveCounts(io, redis, raceId, dayNumber, groupNumber) 
   try {
     const room = `${raceId}:d${dayNumber}:g${groupNumber}`;
 
-    // Get families for this group
-    const raceMeta = await redis.hgetall(keys.raceMeta(raceId, parseInt(dayNumber, 10), parseInt(groupNumber, 10)));
-    let familiesRaw = raceMeta && raceMeta.families ? JSON.parse(raceMeta.families) : [];
-    if (familiesRaw.length === 0) {
-      const groupData = await redis.hget(keys.dayGroups(raceId, dayNumber), `group_${groupNumber}`);
-      if (groupData) familiesRaw = JSON.parse(groupData).map(String);
-    }
-    if (familiesRaw.length === 0) return;
-
-    // Get connected members set
+    // Get all currently connected members in this room
     const connectedMembers = await redis.smembers(keys.connectedMembers(raceId, dayNumber, groupNumber));
-    const connectedSet = new Set(connectedMembers.map(String));
+    if (!connectedMembers.length) return;
 
-    // For each family, count how many of their activeMembers are currently connected
+    // Look up each connected member's family from the memberFamilyInRace hash
     const pipeline = redis.pipeline();
-    for (const fid of familiesRaw) {
-      pipeline.smembers(keys.activeMembers(raceId, dayNumber, groupNumber, fid));
+    for (const mid of connectedMembers) {
+      pipeline.hget(keys.memberFamilyInRace(raceId), mid);
     }
     const results = await pipeline.exec();
 
+    // Count connected members per family
     const activeCounts = {};
-    for (let i = 0; i < familiesRaw.length; i++) {
-      const [err, members] = results[i];
-      if (err || !members) { activeCounts[familiesRaw[i]] = 0; continue; }
-      // Count members who are both in activeMembers AND currently connected
-      const onlineCount = members.filter(m => connectedSet.has(String(m))).length;
-      activeCounts[familiesRaw[i]] = onlineCount;
+    for (let i = 0; i < connectedMembers.length; i++) {
+      const [err, familyId] = results[i];
+      if (err || !familyId) continue;
+      const fid = String(familyId);
+      activeCounts[fid] = (activeCounts[fid] || 0) + 1;
     }
 
     io.to(room).emit('active_counts_update', { activeCounts });
@@ -575,5 +566,5 @@ function emitToMember(io, memberId, event, data) {
   }
 }
 
-module.exports = { attach, emitToMember };
+module.exports = { attach, emitToMember, broadcastActiveCounts };
 

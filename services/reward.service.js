@@ -21,9 +21,9 @@ const db              = require('../config/mysql');
 
 /**
  * Returns per-day win/claim status, streak eligibility, and reward item details.
- * Frontend uses this to render reward cards and enable/disable claim buttons.
+ * Claim status is per-member — each member sees their own claimed state.
  */
-async function getRewardStatus(raceId, familyId) {
+async function getRewardStatus(raceId, familyId, memberId) {
   // 1. Which days did this family win (rank 1)?
   const results = await db.query(
     `SELECT day_number, group_number
@@ -38,12 +38,12 @@ async function getRewardStatus(raceId, familyId) {
     winsMap[r.day_number] = { groupNumber: r.group_number };
   }
 
-  // 2. Which claim_types already claimed?
+  // 2. Which claim_types has THIS member already claimed?
   const claims = await db.query(
     `SELECT claim_type
        FROM family_car_race_reward_claim
-      WHERE race_id = ? AND family_id = ?`,
-    [raceId, familyId]
+      WHERE race_id = ? AND family_id = ? AND claimed_by = ?`,
+    [raceId, familyId, memberId]
   );
 
   const claimedSet = new Set();
@@ -136,8 +136,8 @@ function formatRewards(rows) {
 // ─── Claim Daily Reward ────────────────────────────────────────────────────
 
 /**
- * Claims daily winner reward for a family.
- * Distributes to all active contributing members (from Redis activeMembers set).
+ * Claims daily winner reward for the calling member.
+ * Only contributing members (in activeMembers set) can claim.
  */
 async function claimDailyReward(raceId, familyId, dayNumber, memberId) {
   if (![1, 2, 3].includes(dayNumber)) throw new Error('invalid_day');
@@ -153,19 +153,19 @@ async function claimDailyReward(raceId, familyId, dayNumber, memberId) {
   if (!winRows.length) throw new Error('not_winner');
   const groupNumber = winRows[0].group_number;
 
-  // 2. Check not already claimed
-  const existing = await db.query(
-    `SELECT id FROM family_car_race_reward_claim
-      WHERE race_id = ? AND family_id = ? AND claim_type = ?`,
-    [raceId, familyId, claimType]
-  );
-  if (existing.length) throw new Error('already_claimed');
-
-  // 3. Get active members from Redis (kept for 7 days after race end)
+  // 2. Ensure the claimer actually contributed (check BEFORE already_claimed)
   const activeMembers = await redisClient.smembers(
     keys.activeMembers(raceId, dayNumber, groupNumber, familyId)
   );
-  if (!activeMembers.length) throw new Error('no_active_members');
+  if (!activeMembers.includes(String(memberId))) throw new Error('not_contributed');
+
+  // 3. Check this member hasn't already claimed
+  const existing = await db.query(
+    `SELECT id FROM family_car_race_reward_claim
+      WHERE race_id = ? AND family_id = ? AND claim_type = ? AND claimed_by = ?`,
+    [raceId, familyId, claimType, memberId]
+  );
+  if (existing.length) throw new Error('already_claimed');
 
   // 4. Get reward config for this specific day
   const rewards = await db.query(
@@ -174,26 +174,23 @@ async function claimDailyReward(raceId, familyId, dayNumber, memberId) {
     [claimType]
   );
 
-  // 5. Distribute in a transaction
+  // 5. Distribute rewards to THIS member only
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
 
-    // Distribute individual rewards to each active member
-    for (const userId of activeMembers) {
-      for (const reward of rewards) {
-        if (reward.reward_type === 'family_exp') continue; // handled once per family
-        await distributeReward(connection, userId, reward.reward_type, reward.type_id, reward.count, reward.expiry_days);
-      }
+    for (const reward of rewards) {
+      if (reward.reward_type === 'family_exp') continue;
+      await distributeReward(connection, memberId, reward.reward_type, reward.type_id, reward.count, reward.expiry_days);
     }
 
-    // Family EXP — applied once to the family, not per member
+    // Family EXP — applied once per member claim
     const familyExpReward = rewards.find(r => r.reward_type === 'family_exp');
     if (familyExpReward) {
       await addFamilyExp(connection, familyId, familyExpReward.count);
     }
 
-    // Record the claim
+    // Record the claim for this member
     const now = moment().tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
     await connection.query(
       `INSERT INTO family_car_race_reward_claim
@@ -203,7 +200,7 @@ async function claimDailyReward(raceId, familyId, dayNumber, memberId) {
     );
 
     await connection.commit();
-    return { success: true, membersRewarded: activeMembers.length };
+    return { success: true, membersRewarded: 1 };
   } catch (err) {
     await connection.rollback();
     throw err;
@@ -215,9 +212,8 @@ async function claimDailyReward(raceId, familyId, dayNumber, memberId) {
 // ─── Claim Streak Reward ───────────────────────────────────────────────────
 
 /**
- * Claims 3-day consecutive win bonus.
- * Only available if family won all 3 race days.
- * Distributes to the union of active members across all 3 days.
+ * Claims 3-day consecutive win bonus for the calling member.
+ * Only available if family won all 3 race days and member contributed in at least one.
  */
 async function claimStreakReward(raceId, familyId, memberId) {
   // 1. Verify family won all 3 days
@@ -228,15 +224,7 @@ async function claimStreakReward(raceId, familyId, memberId) {
   );
   if (winRows.length < 3) throw new Error('not_eligible');
 
-  // 2. Check not already claimed
-  const existing = await db.query(
-    `SELECT id FROM family_car_race_reward_claim
-      WHERE race_id = ? AND family_id = ? AND claim_type = 'streak'`,
-    [raceId, familyId]
-  );
-  if (existing.length) throw new Error('already_claimed');
-
-  // 3. Union of active members across all 3 days
+  // 2. Ensure the claimer contributed in at least one day (check BEFORE already_claimed)
   const allMembers = new Set();
   for (const row of winRows) {
     const members = await redisClient.smembers(
@@ -244,7 +232,15 @@ async function claimStreakReward(raceId, familyId, memberId) {
     );
     for (const m of members) allMembers.add(m);
   }
-  if (allMembers.size === 0) throw new Error('no_active_members');
+  if (!allMembers.has(String(memberId))) throw new Error('not_contributed');
+
+  // 3. Check this member hasn't already claimed streak
+  const existing = await db.query(
+    `SELECT id FROM family_car_race_reward_claim
+      WHERE race_id = ? AND family_id = ? AND claim_type = 'streak' AND claimed_by = ?`,
+    [raceId, familyId, memberId]
+  );
+  if (existing.length) throw new Error('already_claimed');
 
   // 4. Get streak reward config
   const rewards = await db.query(
@@ -252,25 +248,23 @@ async function claimStreakReward(raceId, familyId, memberId) {
        FROM family_car_race_reward WHERE claim_type = 'streak'`
   );
 
-  // 5. Distribute in transaction
+  // 5. Distribute to THIS member only
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
 
-    for (const userId of allMembers) {
-      for (const reward of rewards) {
-        if (reward.reward_type === 'family_exp') continue;
-        await distributeReward(connection, userId, reward.reward_type, reward.type_id, reward.count, reward.expiry_days);
-      }
+    for (const reward of rewards) {
+      if (reward.reward_type === 'family_exp') continue;
+      await distributeReward(connection, memberId, reward.reward_type, reward.type_id, reward.count, reward.expiry_days);
     }
 
-    // Family EXP — once per family
+    // Family EXP — once per member claim
     const familyExpReward = rewards.find(r => r.reward_type === 'family_exp');
     if (familyExpReward) {
       await addFamilyExp(connection, familyId, familyExpReward.count);
     }
 
-    // Record claim
+    // Record claim for this member
     const now = moment().tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
     await connection.query(
       `INSERT INTO family_car_race_reward_claim
@@ -280,7 +274,7 @@ async function claimStreakReward(raceId, familyId, memberId) {
     );
 
     await connection.commit();
-    return { success: true, membersRewarded: allMembers.size };
+    return { success: true, membersRewarded: 1 };
   } catch (err) {
     await connection.rollback();
     throw err;

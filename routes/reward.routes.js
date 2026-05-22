@@ -62,7 +62,7 @@ router.get('/status', async (req, res) => {
       return res.status(404).json({ error: 'family_not_found' });
     }
 
-    const status = await rewardService.getRewardStatus(raceId, familyId);
+    const status = await rewardService.getRewardStatus(raceId, familyId, memberId);
     return res.json(status);
   } catch (err) {
     console.error('[reward] status error:', err.message);
@@ -90,7 +90,7 @@ router.post('/claim-daily', async (req, res) => {
     );
     return res.json(result);
   } catch (err) {
-    if (['not_winner', 'already_claimed', 'no_active_members', 'invalid_day'].includes(err.message)) {
+    if (['not_winner', 'already_claimed', 'not_contributed', 'invalid_day'].includes(err.message)) {
       return res.status(400).json({ error: err.message });
     }
     console.error('[reward] claim-daily error:', err.message);
@@ -116,7 +116,7 @@ router.post('/claim-streak', async (req, res) => {
     const result = await rewardService.claimStreakReward(raceId, familyId, memberId);
     return res.json(result);
   } catch (err) {
-    if (['not_eligible', 'already_claimed', 'no_active_members'].includes(err.message)) {
+    if (['not_eligible', 'already_claimed', 'not_contributed'].includes(err.message)) {
       return res.status(400).json({ error: err.message });
     }
     console.error('[reward] claim-streak error:', err.message);

@@ -120,6 +120,7 @@ router.post('/crystal/collect', async (req, res) => {
 
     const io = ioSingleton.get();
     if (io) {
+      handlers.broadcastActiveCounts(io, redisClient, raceId, dayNumber, groupNumber);
       handlers.emitToMember(io, memberId, 'crystal_earned', {
         memberId,
         crystals: result.crystals,
@@ -174,6 +175,7 @@ router.post('/egg/throw', async (req, res) => {
 
     const io = ioSingleton.get();
     if (io) {
+      handlers.broadcastActiveCounts(io, redisClient, raceId, dayNumber, groupNumber);
       const room = `${raceId}:d${dayNumber}:g${groupNumber}`;
       let attackerName = '';
       let attackerImage = '';
@@ -224,6 +226,7 @@ router.post('/wiper/use', async (req, res) => {
 
     const io = ioSingleton.get();
     if (io) {
+      handlers.broadcastActiveCounts(io, redisClient, raceId, dayNumber, groupNumber);
       const room = `${raceId}:d${dayNumber}:g${groupNumber}`;
       let memberName = '';
       let memberImage = '';
@@ -231,7 +234,7 @@ router.post('/wiper/use', async (req, res) => {
         const userData = await cacheManager.getOrCache('user', memberId);
         if (userData) { memberName = userData.username || ''; memberImage = userData.image || ''; }
       } catch (_) {}
-      io.to(room).emit('wiper_used', { familyId, new_speed: newSpeed, memberName, memberImage });
+      io.to(room).emit('wiper_used', { familyId, new_speed: newSpeed, memberName, memberImage, amount });
     }
 
     return res.json({ current_speed: newSpeed, crystals: remainingCrystals });
@@ -257,6 +260,10 @@ router.post('/fuel/submit', async (req, res) => {
 
   try {
     await redisClient.sadd(keys.activeMembers(raceId, dayNumber, groupNumber, familyId), memberId);
+
+    if (io) {
+      handlers.broadcastActiveCounts(io, redisClient, raceId, dayNumber, groupNumber);
+    }
 
     if (parseInt(windowIndex, 10) === 0) {
       // Car restart (outside window)

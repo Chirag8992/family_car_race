@@ -44,7 +44,7 @@ const cacheManager = require('../utils/Cache_manager');
 async function getPitMemberList(redis, db, raceId, dayNumber, groupNumber, familyId, date) {
   // 1. All members of this family from MySQL
   const members = await db.query(
-    `SELECT userId, memberStatus FROM groupsmembers WHERE familyId = ?`,
+    `SELECT userId, memberStatus FROM groupsmembers WHERE familyId = ? AND memberStatus = '1'`,
     [familyId]
   );
   if (!members.length) return [];
@@ -139,7 +139,7 @@ async function getPitMemberList(redis, db, raceId, dayNumber, groupNumber, famil
 async function getFamilyInventory(redis, db, raceId, dayNumber, groupNumber, familyId) {
   // 1. All members of this family
   const members = await db.query(
-    `SELECT userId, memberStatus FROM groupsmembers WHERE familyId = ?`,
+    `SELECT userId, memberStatus FROM groupsmembers WHERE familyId = ? AND memberStatus = '1'`,
     [familyId]
   );
   if (!members.length) return [];
