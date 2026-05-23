@@ -98,7 +98,22 @@ const worker = new Worker(
       return; // Only process one game per cron fire
     }
 
-    // ── Scenario 2: Day 3 grouping (today = race_start_day + 2, status = 'day2_done') ──
+    // ── Scenario 2: Day 2 status update (today = race_start_day + 1, status = 'day1_done') ──
+    const day1DoneGames = await db.query(
+      `SELECT id, race_start_day FROM family_car_race_schedule WHERE status = 'day1_done'`
+    );
+
+    for (const game of day1DoneGames) {
+      const day2Date = helpers.addDays(game.race_start_day, 1);
+      if (day2Date !== today) continue;
+
+      const raceId = game.id;
+      await gameService.updateGameStatus(raceId, 'day2_pending', db, redis);
+      console.log(`[grouping] Day 2 status set to day2_pending for ${raceId}`);
+      return;
+    }
+
+    // ── Scenario 3: Day 3 grouping (today = race_start_day + 2, status = 'day2_done') ──
     const day2DoneGames = await db.query(
       `SELECT id, race_start_day FROM family_car_race_schedule WHERE status = 'day2_done'`
     );
