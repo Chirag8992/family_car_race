@@ -309,6 +309,27 @@ function attach(io) {
           }
         }
 
+        // Build active member counts per family for the spectator snapshot
+        let activeCounts = {};
+        try {
+          const connectedMembers = await redisClient.smembers(keys.connectedMembers(raceId, dayNumber, groupNumber));
+          if (connectedMembers.length) {
+            const pipeline = redisClient.pipeline();
+            for (const mid of connectedMembers) {
+              pipeline.hget(keys.memberFamilyInRace(raceId), mid);
+            }
+            const results = await pipeline.exec();
+            for (let i = 0; i < connectedMembers.length; i++) {
+              const [err, familyId] = results[i];
+              if (err || !familyId) continue;
+              const fid = String(familyId);
+              activeCounts[fid] = (activeCounts[fid] || 0) + 1;
+            }
+          }
+        } catch (err) {
+          console.warn('[socket] spectator activeCounts lookup failed:', err.message);
+        }
+
         socket.emit('spectating', {
           raceId,
           dayNumber:   parseInt(dayNumber, 10),
@@ -317,6 +338,7 @@ function attach(io) {
           family_states: familyStates,
           family_info: spectatorFamilyInfo,
           leaderboard,
+          activeCounts,
           race_elapsed_ms: startedAt ? Math.max(0, Date.now() - startedAt) : 0,
           race_duration_ms: GAME.RACE_DURATION_MS,
           started_at: startedAt,
