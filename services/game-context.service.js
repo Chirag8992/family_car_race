@@ -59,6 +59,9 @@ function currentWeekThursdayIST() {
  *
  * Active statuses mean the game week is underway (grouping done or race running).
  * We also include 'scheduled' so the context is visible before Thursday grouping.
+ *
+ * Also returns recently completed games within 1 day after race end (grace period)
+ * so participants can still view results and claim rewards.
  */
 async function getActiveGame(db) {
   const rows = await db.query(
@@ -68,7 +71,20 @@ async function getActiveGame(db) {
       ORDER BY created_at DESC
       LIMIT 1`
   );
-  return rows.length ? rows[0] : null;
+  if (rows.length) return rows[0];
+
+  // Grace period: show completed games for 1 extra day after race_end_day
+  const today = todayIST();
+  const completedRows = await db.query(
+    `SELECT id, race_week_start, race_start_day, race_end_day, race_start_time, status
+       FROM family_car_race_schedule
+      WHERE status = 'completed'
+        AND DATE_ADD(race_start_day, INTERVAL 3 DAY) >= ?
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [today]
+  );
+  return completedRows.length ? completedRows[0] : null;
 }
 
 /**
@@ -86,6 +102,18 @@ function currentDayNumber(game) {
   if (today === d2) return 2;
   if (today === d3) return 3;
   return null;
+}
+
+/**
+ * Returns true if today is within 1 day after the last race day (grace period).
+ * During grace period, participants can still view results and claim rewards.
+ */
+function isGracePeriod(game) {
+  const today = todayIST();
+  const d1    = mysqlDateToIST(game.race_start_day);
+  const d3    = helpers.addDays(d1, 2);
+  const graceDayEnd = helpers.addDays(d3, 1); // 1 day after day3
+  return game.status === 'completed' && today > d3 && today <= graceDayEnd;
 }
 
 /**
@@ -159,10 +187,11 @@ async function resolveGameContext(memberId, db, redis) {
   };
 
   const dayNumber = currentDayNumber(game);
+  const gracePeriod = isGracePeriod(game);
 
   // ── No memberId supplied → spectator ─────────────────────────────────
   if (!memberId) {
-    return { mode: 'spectator', race: { ...raceInfo, dayNumber } };
+    return { mode: 'spectator', race: { ...raceInfo, dayNumber: dayNumber || (gracePeriod ? 3 : null), gracePeriod } };
   }
 
   // ── Check participant membership ──────────────────────────────────────
@@ -182,27 +211,30 @@ async function resolveGameContext(memberId, db, redis) {
   //   - Users who leave their race family and join another → treated as spectator
 
   if (!familyId) {
-    return { mode: 'spectator', race: { ...raceInfo, dayNumber } };
+    return { mode: 'spectator', race: { ...raceInfo, dayNumber: dayNumber || (gracePeriod ? 3 : null), gracePeriod } };
   }
 
   // ── Participant: resolve groupNumber + raceStatus ─────────────────────
+  // During grace period, use day 3 for resolution
+  const resolveDayNumber = dayNumber || (gracePeriod ? 3 : null);
   if (!groupNumber) {
-    groupNumber = await resolveFamilyGroup(redis, game.id, dayNumber, familyId);
+    groupNumber = await resolveFamilyGroup(redis, game.id, resolveDayNumber, familyId);
   }
-  const raceStatus  = await resolveRaceStatus(redis, game.id, dayNumber, groupNumber);
+  const raceStatus  = gracePeriod ? 'finished' : await resolveRaceStatus(redis, game.id, resolveDayNumber, groupNumber);
 
   return {
     mode: 'participant',
     race: {
       ...raceInfo,
-      dayNumber,
+      dayNumber: resolveDayNumber,
       raceStatus,        // 'not_started' | 'running' | 'finished'
+      gracePeriod,       // true if showing results after game ended
     },
     participant: {
       memberId,
       familyId,
       groupNumber,
-      dayNumber,
+      dayNumber: resolveDayNumber,
     },
   };
 }
