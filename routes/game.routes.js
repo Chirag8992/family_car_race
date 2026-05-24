@@ -88,9 +88,25 @@ router.get('/record-overview', async (req, res) => {
     const { raceId } = req.query;
     if (!raceId) return res.status(400).json({ error: 'raceId_required' });
 
-    const gameMeta = await redis.hgetall(keysUtil.gameMeta(raceId));
+    let gameMeta = await redis.hgetall(keysUtil.gameMeta(raceId));
+
+    // Fallback to MySQL schedule when Redis gameMeta is expired/deleted (grace period)
     if (!gameMeta || !gameMeta.status) {
-      return res.status(404).json({ error: 'game_not_found' });
+      const schedRows = await db.query(
+        `SELECT id, race_start_day, status FROM family_car_race_schedule WHERE id = ? LIMIT 1`,
+        [raceId]
+      );
+      if (!schedRows.length) {
+        return res.status(404).json({ error: 'game_not_found' });
+      }
+      const sched = schedRows[0];
+      const d1 = gameCtx.mysqlDateToIST(sched.race_start_day);
+      gameMeta = {
+        status: sched.status,
+        day1_date: d1,
+        day2_date: moment(d1).add(1, 'days').format('YYYY-MM-DD'),
+        day3_date: moment(d1).add(2, 'days').format('YYYY-MM-DD'),
+      };
     }
 
     const carColors = ['blue', 'green', 'red'];
@@ -105,7 +121,34 @@ router.get('/record-overview', async (req, res) => {
     const days = [];
 
     for (let dayNumber = 1; dayNumber <= 3; dayNumber++) {
-      const dayGroupsRaw = await redis.hgetall(keysUtil.dayGroups(raceId, dayNumber));
+      let dayGroupsRaw = await redis.hgetall(keysUtil.dayGroups(raceId, dayNumber));
+
+      // Fallback: if Redis dayGroups are expired, reconstruct from MySQL results
+      if (!dayGroupsRaw || !dayGroupsRaw.group_1) {
+        const resultRows = await db.query(
+          `SELECT group_number, family_id FROM family_car_race_result
+            WHERE race_id = ? AND day_number = ?
+            ORDER BY group_number, rank_position`,
+          [raceId, dayNumber]
+        );
+        if (resultRows.length) {
+          // Reconstruct dayGroupsRaw from MySQL results
+          const groupMap = {};
+          for (const row of resultRows) {
+            const key = `group_${row.group_number}`;
+            if (!groupMap[key]) groupMap[key] = [];
+            if (!groupMap[key].includes(String(row.family_id))) {
+              groupMap[key].push(String(row.family_id));
+            }
+          }
+          // Convert to the same format Redis stores (JSON strings)
+          dayGroupsRaw = {};
+          for (const [key, families] of Object.entries(groupMap)) {
+            dayGroupsRaw[key] = JSON.stringify(families);
+          }
+        }
+      }
+
       if (!dayGroupsRaw || !dayGroupsRaw.group_1) {
         // Groups not assigned for this day yet
         days.push({ dayNumber, status: 'pending', groups: [] });

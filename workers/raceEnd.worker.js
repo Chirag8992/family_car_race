@@ -238,21 +238,25 @@ async function cleanupGroupRaceKeys(redis, raceId, dayNumber, groupNumber, famil
 }
 
 async function cleanupGameKeys(redis, raceId) {
+  // Keep game-level keys for 24 hours so participants can still view results
+  // and claim rewards during the grace period (1 day after game ends).
+  const GRACE_TTL = 24 * 60 * 60; // 24 hours
+
   const pipeline = redis.pipeline();
-  pipeline.del(keys.gameMeta(raceId));
-  pipeline.del(keys.participants(raceId));
-  pipeline.del(keys.memberFamilyInRace(raceId));   // fix: was never deleted
-  pipeline.del(keys.dayGroups(raceId, 1));
-  pipeline.del(keys.dayGroups(raceId, 2));
-  pipeline.del(keys.dayGroups(raceId, 3));
-  // Delete raceMeta for all day/group combos (kept until now for status lookups)
+  pipeline.expire(keys.gameMeta(raceId), GRACE_TTL);
+  pipeline.expire(keys.participants(raceId), GRACE_TTL);
+  pipeline.expire(keys.memberFamilyInRace(raceId), GRACE_TTL);
+  pipeline.expire(keys.dayGroups(raceId, 1), GRACE_TTL);
+  pipeline.expire(keys.dayGroups(raceId, 2), GRACE_TTL);
+  pipeline.expire(keys.dayGroups(raceId, 3), GRACE_TTL);
+  // Keep raceMeta for all day/group combos
   for (let d = 1; d <= 3; d++) {
     for (let g = 1; g <= 3; g++) {
-      pipeline.del(keys.raceMeta(raceId, d, g));
+      pipeline.expire(keys.raceMeta(raceId, d, g), GRACE_TTL);
     }
   }
   await pipeline.exec();
-  console.log(`[raceEnd] Game-level Redis cleanup done: ${raceId}`);
+  console.log(`[raceEnd] Game-level Redis keys set to expire in 24h (grace period): ${raceId}`);
 }
 
 module.exports = {};

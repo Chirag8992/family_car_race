@@ -195,7 +195,7 @@ async function resolveGameContext(memberId, db, redis) {
   }
 
   // ── Check participant membership ──────────────────────────────────────
-  const isParticipant = await redis.sismember(keys.participants(game.id), memberId);
+  let isParticipant = await redis.sismember(keys.participants(game.id), memberId);
 
   let familyId = null;
   let groupNumber = null;
@@ -204,11 +204,27 @@ async function resolveGameContext(memberId, db, redis) {
     familyId = await redis.hget(keys.memberFamilyInRace(game.id), memberId);
   }
 
-  // NOTE: We intentionally do NOT fall back to the live groupsmembers table.
-  // The memberFamilyInRace hash is populated at grouping time and is the
-  // authoritative record of who can participate. This ensures:
-  //   - Users who join a race family AFTER grouping → treated as spectator
-  //   - Users who leave their race family and join another → treated as spectator
+  // ── Grace period MySQL fallback (Redis data may be deleted) ───────────
+  // If Redis doesn't have participant info but we're in grace period,
+  // resolve from MySQL race results + groupsmembers.
+  if (!familyId && gracePeriod) {
+    const rows = await db.query(
+      `SELECT DISTINCT r.family_id
+         FROM family_car_race_result r
+         INNER JOIN groupsmembers gm ON gm.familyId = r.family_id AND gm.userId = ? AND gm.memberStatus = '1'
+        WHERE r.race_id = ?
+        LIMIT 1`,
+      [memberId, game.id]
+    );
+    if (rows.length) {
+      familyId = String(rows[0].family_id);
+      isParticipant = true;
+    }
+  }
+
+  // NOTE: We intentionally do NOT fall back to the live groupsmembers table
+  // during active race days. The memberFamilyInRace hash is populated at
+  // grouping time and is the authoritative record of who can participate.
 
   if (!familyId) {
     return { mode: 'spectator', race: { ...raceInfo, dayNumber: dayNumber || (gracePeriod ? 3 : null), gracePeriod } };
@@ -219,6 +235,16 @@ async function resolveGameContext(memberId, db, redis) {
   const resolveDayNumber = dayNumber || (gracePeriod ? 3 : null);
   if (!groupNumber) {
     groupNumber = await resolveFamilyGroup(redis, game.id, resolveDayNumber, familyId);
+  }
+  // MySQL fallback for groupNumber when Redis dayGroups are deleted
+  if (!groupNumber && gracePeriod) {
+    const grpRows = await db.query(
+      `SELECT group_number FROM family_car_race_result
+        WHERE race_id = ? AND day_number = ? AND family_id = ?
+        LIMIT 1`,
+      [game.id, resolveDayNumber, familyId]
+    );
+    if (grpRows.length) groupNumber = grpRows[0].group_number;
   }
   const raceStatus  = gracePeriod ? 'finished' : await resolveRaceStatus(redis, game.id, resolveDayNumber, groupNumber);
 
@@ -402,6 +428,7 @@ module.exports = {
   getSpectatorSnapshot,
   currentDayNumber,
   todayIST,
+  mysqlDateToIST,
   currentWeekMondayIST,
   currentWeekThursdayIST,
 };
