@@ -13,11 +13,20 @@ spec:
       labels:
         app: roxstar-family-car-race
     spec:
+      nodeSelector:
+        cloud.google.com/gke-nodepool: user-pool
       containers:
         - name: roxstar-family-car-race
-          image: ${AZURE_CONTAINER_REGISTRY}.azurecr.io/roxstar-family-car-race:latest
+          image: ${AZURE_CONTAINER_REGISTRY}/roxstar-family-car-race:${IMAGE_TAG}
           ports:
             - containerPort: 8081
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
           env:
             - name: NODE_OPTIONS
               value: "--max-old-space-size=900"

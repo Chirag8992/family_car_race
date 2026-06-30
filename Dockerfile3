@@ -1,0 +1,17 @@
+From asia-south1-docker.pkg.dev/roxstar-465313/roxstar/node-18-alpine:latest
+
+workdir /app
+
+copy package.json /app
+
+RUN npm install --production
+
+COPY . /app
+
+EXPOSE 8081
+
+ENV NODE_ENV=production
+ENV PORT=8081
+
+
+CMD ["node", "server.js"]

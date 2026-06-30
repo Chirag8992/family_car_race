@@ -1,0 +1,69 @@
+name: roxstar-family-car-race GCP Dev Deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./
+          file: Dockerfile3
+          push: true
+          tags: asia-south1-docker.pkg.dev/roxstar-465313/roxstar/roxstar-family-car-race:${{ github.sha }}
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+
+      - name: Get GKE Credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: roxstar-development
+          location: asia-south1-a
+          project_id: roxstar-465313
+
+      - name: Verify namespace
+        run: kubectl get namespace development
+
+      - name: Substitute env vars in manifests
+        run: |
+          export AZURE_CONTAINER_REGISTRY=asia-south1-docker.pkg.dev/roxstar-465313/roxstar
+          export NAMESPACE=development
+          export IMAGE_TAG=${{ github.sha }}
+          for f in ./manifests/*.yaml; do
+            envsubst < "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+          done
+
+      - name: Deploy to GKE
+        run: kubectl apply -f ./manifests --namespace development
